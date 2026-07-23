@@ -9,10 +9,15 @@ Topologia:
   ``start()`` — o catálogo de eventos é a fonte de verdade.
 * Idempotência: chave ``{prefix}:dedup:{consumer}:{event_id}`` com TTL
   (``SET NX``); segunda entrega do mesmo evento é ACK sem reprocesso.
-* Retry: mensagem não-ACK reaparece via ``XAUTOCLAIM`` após
-  ``retry_min_idle_ms``; ao exceder ``max_delivery_attempts`` vai para
-  a DLQ ``{prefix}:dlq:{consumer}`` e é ACK no stream de origem.
+* Retry / recuperação após crash: mensagem não-ACK (handler falhou ou o
+  processo morreu antes do ACK) reaparece via ``XPENDING`` + ``XCLAIM``
+  após ``retry_min_idle_ms``; ao exceder ``max_delivery_attempts`` vai
+  para a DLQ ``{prefix}:dlq:{consumer}`` (limitada por ``dlq_maxlen``) e é
+  ACK no stream de origem.
 * Redrive: reenfileira do DLQ para o stream de origem e remove a entrada.
+* Resiliência (L2-2): ``publish`` e o laço de consumo reentram com backoff
+  exponencial (com teto) em quedas de conexão; o consumo particiona por
+  chave (ADR-038) com paralelismo configurável por ``consumer_concurrency``.
 """
 
 from __future__ import annotations
@@ -23,7 +28,9 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from redis.asyncio import Redis
+from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import ResponseError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from lumbra.domain.events import DomainEvent, EventRegistry
 from lumbra.ports.event_bus import (
@@ -44,6 +51,20 @@ if TYPE_CHECKING:
 _log = get_logger("lumbra.eventbus.redis")
 
 _ENVELOPE_FIELD = b"envelope"
+
+# quedas de conexão que merecem backoff+reentrega (não erros de lógica)
+_TRANSIENT = (RedisConnectionError, RedisTimeoutError)
+
+
+def backoff_ms(attempt: int, *, base_ms: int, cap_ms: int) -> float:
+    """Backoff exponencial com teto: ``base * 2^(attempt-1)``, limitado a
+    ``cap``. ``attempt`` começa em 1; ``attempt<=0`` não espera.
+
+    Determinístico (sem jitter): é uma plataforma pessoal de um processo,
+    não há efeito manada a amortecer, e o determinismo facilita o teste."""
+    if attempt <= 0:
+        return 0.0
+    return float(min(cap_ms, base_ms * (2 ** (attempt - 1))))
 
 
 class RedisStreamsEventBus(EventBusPort):
@@ -145,11 +166,42 @@ class RedisStreamsEventBus(EventBusPort):
     # ------------------------------------------------------------ publicação
 
     async def publish(self, event: DomainEvent) -> None:
-        await self._redis.xadd(
-            self._stream_key(event.type),
-            {_ENVELOPE_FIELD: event.model_dump_json()},
-            maxlen=self._settings.stream_maxlen,
-            approximate=True,
+        # reentrega em blip de rede: um xadd repetido pode duplicar a
+        # mensagem, mas o dedup do consumidor a torna idempotente (ADR-014).
+        # Melhor duplicar e ser entregue do que perder o evento.
+        attempt = 0
+        while True:
+            try:
+                await self._redis.xadd(
+                    self._stream_key(event.type),
+                    {_ENVELOPE_FIELD: event.model_dump_json()},
+                    maxlen=self._settings.stream_maxlen,
+                    approximate=True,
+                )
+                return
+            except _TRANSIENT as exc:
+                attempt += 1
+                if attempt > self._settings.publish_max_retries:
+                    raise
+                delay = self._backoff(attempt)
+                _log.warning(
+                    "publish_retry",
+                    event_type=event.type,
+                    event_id=str(event.event_id),
+                    attempt=attempt,
+                    backoff_s=round(delay, 3),
+                    error=repr(exc),
+                )
+                await asyncio.sleep(delay)
+
+    def _backoff(self, attempt: int) -> float:
+        return (
+            backoff_ms(
+                attempt,
+                base_ms=self._settings.reconnect_backoff_base_ms,
+                cap_ms=self._settings.reconnect_backoff_cap_ms,
+            )
+            / 1000
         )
 
     # ------------------------------------------------------------ consumo
@@ -159,6 +211,7 @@ class RedisStreamsEventBus(EventBusPort):
         if not streams:
             return
         block_ms = min(self._settings.consumer_block_ms, 1_000)
+        falhas = 0  # ciclos consecutivos com erro, para o backoff exponencial
         while not self._stopping.is_set():
             try:
                 response = await self._redis.xreadgroup(
@@ -172,11 +225,22 @@ class RedisStreamsEventBus(EventBusPort):
                     for message_id, fields in messages:
                         await self._submit(spec, stream_name, message_id, fields, 1)
                 await self._reclaim_pending(spec)
+                falhas = 0  # ciclo saudável: zera o backoff
             except asyncio.CancelledError:  # pragma: no cover
                 raise
             except Exception as exc:
-                _log.error("consume_loop_error", consumer=spec.name, error=repr(exc))
-                await asyncio.sleep(0.5)
+                # Redis fora do ar, timeout, etc.: recua exponencialmente em
+                # vez de martelar. O redis-py reconecta na próxima chamada.
+                falhas += 1
+                delay = self._backoff(falhas)
+                _log.error(
+                    "consume_loop_error",
+                    consumer=spec.name,
+                    error=repr(exc),
+                    falhas=falhas,
+                    backoff_s=round(delay, 3),
+                )
+                await asyncio.sleep(delay)
 
     async def _submit(
         self,
@@ -239,15 +303,24 @@ class RedisStreamsEventBus(EventBusPort):
     async def _reclaim_pending(self, spec: ConsumerSpec) -> None:
         """Reprocessa mensagens pendentes (falhas ou consumidores mortos).
 
-        As reclamadas voltam pelo MESMO dispatcher, roteadas pela chave —
-        preservam a ordem por entidade também na reentrega."""
+        É o mecanismo de recuperação após crash: uma mensagem lida mas não
+        confirmada (o processo morreu antes do ACK) fica no PEL; passado o
+        ``retry_min_idle_ms``, qualquer instância a reclama e reprocessa. As
+        reclamadas voltam pelo MESMO dispatcher, roteadas pela chave —
+        preservam a ordem por entidade também na reentrega.
+
+        Usa XPENDING+XCLAIM, e não XAUTOCLAIM (que seria uma chamada só): o
+        XPENDING devolve ``times_delivered`` por mensagem, que é o que
+        decide quando parar de reentregar e mandar para a DLQ. O XAUTOCLAIM
+        não expõe esse contador — trocá-lo custaria a garantia de retry
+        limitado."""
         for stream in self._streams_by_consumer[spec.name]:
             pending: Sequence[dict[str, Any]] = await self._redis.xpending_range(
                 stream,
                 spec.name,
                 min="-",
                 max="+",
-                count=32,
+                count=64,
                 idle=self._settings.retry_min_idle_ms,
             )
             for entry in pending:
@@ -291,6 +364,8 @@ class RedisStreamsEventBus(EventBusPort):
                 b"failed_at": datetime.now(tz=UTC).isoformat(),
                 b"origin_stream": stream,
             },
+            maxlen=self._settings.dlq_maxlen,  # DLQ não cresce sem limite (L2-2)
+            approximate=True,
         )
         await self._redis.xack(stream, spec.name, message_id)
 

@@ -40,6 +40,11 @@ class RedisSettings(BaseModel):
     retry_min_idle_ms: int = Field(default=30_000, ge=100)  # reentrega após este idle
     dedup_ttl_seconds: int = Field(default=86_400, ge=60)  # janela de idempotência
     stream_maxlen: int = Field(default=100_000, ge=1_000)  # retenção aproximada
+    dlq_maxlen: int = Field(default=10_000, ge=100)  # DLQ limitada (L2-2)
+    # resiliência a queda de conexão (L2-2): backoff exponencial com teto
+    reconnect_backoff_base_ms: int = Field(default=200, ge=10)
+    reconnect_backoff_cap_ms: int = Field(default=30_000, ge=100)
+    publish_max_retries: int = Field(default=3, ge=0)  # reentrega de publish em blip de rede
 
 
 class SecuritySettings(BaseModel):

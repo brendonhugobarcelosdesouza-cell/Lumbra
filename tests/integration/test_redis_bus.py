@@ -177,6 +177,41 @@ async def test_partitioned_order_preserved_under_concurrency(redis, reg, setting
         await bus.stop()
 
 
+async def test_recovery_after_worker_crash(redis, reg, settings):
+    """Mensagem lida por um worker que 'morreu' antes do ACK (ficou no PEL)
+    é reclamada e processada por outra instância — recuperação após falha
+    (L2-2)."""
+    settings = settings.model_copy(update={"retry_min_idle_ms": 200})
+    seen = []
+
+    async def handler(event):
+        seen.append(event)
+
+    stream = f"{settings.stream_prefix}:events:doc.stage"
+    group = "it-consumer"
+    event = _stage(reg, "D", 1)
+
+    # simula o crash: cria o grupo, injeta a mensagem e a entrega a um
+    # worker que "morre" sem confirmar — ela fica pendente no PEL dele
+    await redis.xgroup_create(stream, group, id="0", mkstream=True)
+    await redis.xadd(stream, {b"envelope": event.model_dump_json()})
+    morto = await redis.xreadgroup(
+        groupname=group, consumername="worker-morto", streams={stream: ">"}, count=1
+    )
+    assert morto  # a mensagem está no PEL do worker morto, sem ACK
+
+    # sobe uma instância viva: o reader não vê a mensagem em ">" (já foi
+    # entregue), mas o reclaim a rouba do worker morto após o idle
+    bus = RedisStreamsEventBus(redis, reg, settings)
+    bus.register(ConsumerSpec(group, ("doc.*",), handler))
+    await bus.start()
+    try:
+        assert await _wait_until(lambda: len(seen) == 1, timeout=10.0)
+        assert seen[0].payload["document_id"] == "D"
+    finally:
+        await bus.stop()
+
+
 async def _wait_until_async(coro_factory, check, timeout: float = 8.0):
     deadline = asyncio.get_event_loop().time() + timeout
     while asyncio.get_event_loop().time() < deadline:
