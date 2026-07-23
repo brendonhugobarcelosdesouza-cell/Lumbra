@@ -1,0 +1,1 @@
+"""Adaptadores do Knowledge Graph."""

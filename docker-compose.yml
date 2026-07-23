@@ -1,0 +1,54 @@
+name: lumbra
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: lumbra
+      POSTGRES_PASSWORD: lumbra          # dev only — produção usa secrets
+      POSTGRES_DB: lumbra
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lumbra -d lumbra"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    environment:
+      LUMBRA_ENVIRONMENT: local
+      LUMBRA_EVENTBUS: redis
+      LUMBRA_PERSISTENCE: postgres
+      LUMBRA_DATABASE__DSN: postgresql+asyncpg://lumbra:lumbra@postgres:5432/lumbra
+      LUMBRA_REDIS__URL: redis://redis:6379/0
+      LUMBRA_OBSERVABILITY__LOG_JSON: "true"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:

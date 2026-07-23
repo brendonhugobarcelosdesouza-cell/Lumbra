@@ -1,0 +1,21 @@
+# syntax=docker/dockerfile:1.7
+# ---------------------------------------------------------------- build
+FROM python:3.12-slim AS build
+WORKDIR /app
+COPY pyproject.toml README.md ./
+COPY src ./src
+RUN pip install --no-cache-dir --upgrade pip \
+ && pip wheel --no-cache-dir --wheel-dir /wheels .
+
+# ---------------------------------------------------------------- runtime
+FROM python:3.12-slim AS runtime
+# Segurança: usuário não-root, sem shell de conveniência
+RUN groupadd -r lumbra && useradd -r -g lumbra -d /app -s /usr/sbin/nologin lumbra
+WORKDIR /app
+COPY --from=build /wheels /wheels
+RUN pip install --no-cache-dir /wheels/*.whl && rm -rf /wheels
+USER lumbra
+EXPOSE 8000
+HEALTHCHECK --interval=15s --timeout=3s --retries=3 \
+  CMD python -c "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2).status==200 else 1)"
+CMD ["uvicorn", "lumbra.api.main:create_default_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,30 @@
+{
+  "description": "Golden set de RAG (E1-07): consultas com documento esperado. Tipos: lexical (termos presentes), semantic (paráfrase sem termos em comum), exact (código/valor literal).",
+  "thresholds": {"recall_at_1": 0.75, "recall_at_3": 0.9, "mrr": 0.8},
+  "queries": [
+    {"query": "quanto custa o aluguel do apartamento", "expected": "aluguel.md", "kind": "lexical"},
+    {"query": "valor da locação do imóvel no centro", "expected": "aluguel.md", "kind": "semantic"},
+    {"query": "quem paga o IPTU", "expected": "aluguel.md", "kind": "lexical"},
+    {"query": "remédio para pressão alta horários", "expected": "medicacao.md", "kind": "semantic"},
+    {"query": "o que fazer se esquecer a dose da losartana", "expected": "medicacao.md", "kind": "lexical"},
+    {"query": "ata da reunião do projeto com decisões", "expected": "reuniao.md", "kind": "lexical"},
+    {"query": "o que ficou combinado no encontro de segunda com a equipe", "expected": "reuniao.md", "kind": "semantic"},
+    {"query": "receita de bolo de cenoura com cobertura", "expected": "bolo.md", "kind": "lexical"},
+    {"query": "como preparar uma sobremesa assada", "expected": "bolo.md", "kind": "semantic"},
+    {"query": "vencimento da conta de luz", "expected": "boleto.md", "kind": "semantic"},
+    {"query": "multa por atraso na fatura de energia", "expected": "boleto.md", "kind": "lexical"},
+    {"query": "horário do voo para Lisboa", "expected": "viagem.md", "kind": "lexical"},
+    {"query": "roteiro de passeios em Portugal", "expected": "viagem.md", "kind": "semantic"},
+    {"query": "franquia do seguro do carro", "expected": "seguro.md", "kind": "lexical"},
+    {"query": "o que a apólice cobre em caso de batida", "expected": "seguro.md", "kind": "semantic"},
+    {"query": "experiência profissional da candidata", "expected": "curriculo.md", "kind": "lexical"},
+    {"query": "quanto tempo de garantia tem o notebook", "expected": "garantia.md", "kind": "lexical"},
+    {"query": "o computador molhou, a garantia cobre?", "expected": "garantia.md", "kind": "semantic"},
+    {"query": "treino de peito e tríceps", "expected": "academia.md", "kind": "lexical"},
+    {"query": "rotina de exercícios na academia", "expected": "academia.md", "kind": "semantic"},
+    {"query": "IGP-M", "expected": "aluguel.md", "kind": "exact"},
+    {"query": "0800-777-1234", "expected": "garantia.md", "kind": "exact"},
+    {"query": "TP-088", "expected": "viagem.md", "kind": "exact"},
+    {"query": "312 kWh", "expected": "boleto.md", "kind": "exact"}
+  ]
+}

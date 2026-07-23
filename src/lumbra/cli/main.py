@@ -1,0 +1,278 @@
+"""CLI da Lumbra — um comando para cada coisa que você precisa fazer.
+
+    lumbra doctor    diagnostica o ambiente e diz como corrigir
+    lumbra dev       sobe tudo para desenvolvimento (banco, migrações, API)
+    lumbra up        sobe em modo produção local
+    lumbra init      assistente de primeira execução
+    lumbra version   versão da plataforma
+
+Implementado com ``argparse`` de propósito: uma dependência a menos para
+falhar numa instalação limpa, que é exatamente o cenário que este comando
+existe para consertar.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+from lumbra.cli import console
+from lumbra.diagnostics import checks
+from lumbra.shared.config import Settings, get_settings
+
+RAIZ = Path(__file__).resolve().parents[3]
+
+
+def _settings() -> Settings:
+    get_settings.cache_clear()
+    return get_settings()
+
+
+# ---------------------------------------------------------------- doctor
+
+
+def _imprimir_resultado(resultado: checks.CheckResult) -> None:
+    simbolo = console.SIMBOLOS[resultado.status.value]
+    cor_status = console.CORES_STATUS[resultado.status.value]
+    console.linha(
+        f"  {console.cor(simbolo, cor_status)}  "
+        f"{console.cor(resultado.name.ljust(14), 'negrito')} {resultado.summary}"
+    )
+    if resultado.detail:
+        console.linha(f"        {console.cor(resultado.detail, 'cinza')}")
+    if resultado.fix and resultado.status in (checks.Status.FAIL, checks.Status.WARN):
+        console.linha(f"        {console.cor('como corrigir: ' + resultado.fix, 'azul')}")
+
+
+def comando_doctor(args: argparse.Namespace) -> int:
+    console.silenciar_logs(args.verbose)
+    resultados = asyncio.run(checks.executar(_settings()))
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "version": checks.versao_da_plataforma(),
+                    "ready": checks.tudo_pronto(resultados),
+                    "summary": checks.resumo(resultados),
+                    "checks": [r.as_dict() for r in resultados],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0 if checks.tudo_pronto(resultados) else 1
+
+    console.titulo(f"Lumbra {checks.versao_da_plataforma()} — diagnóstico")
+    for resultado in resultados:
+        _imprimir_resultado(resultado)
+
+    contagem = checks.resumo(resultados)
+    console.linha()
+    if checks.tudo_pronto(resultados):
+        console.linha(
+            console.cor(
+                f"Tudo pronto para usar. ({contagem['ok']} ok, {contagem['warn']} avisos)", "verde"
+            )
+        )
+        if contagem["warn"]:
+            console.linha(
+                console.cor("Avisos não impedem o uso — são limitações que vale conhecer.", "cinza")
+            )
+        return 0
+    console.linha(
+        console.cor(
+            f"{contagem['fail']} problema(s) impedem o funcionamento. "
+            "Siga as instruções acima e rode `lumbra doctor` de novo.",
+            "vermelho",
+        )
+    )
+    return 1
+
+
+# ---------------------------------------------------------------- dev / up
+
+
+def _compose_disponivel() -> bool:
+    docker = shutil.which("docker")
+    if docker is None:
+        return False
+    return (
+        subprocess.run([docker, "compose", "version"], capture_output=True, check=False).returncode
+        == 0
+    )
+
+
+def _subir_servicos() -> bool:
+    if not _compose_disponivel():
+        console.linha(
+            console.cor(
+                "Docker indisponível — assumindo que Postgres e Redis já estão no ar.", "amarelo"
+            )
+        )
+        return False
+    console.linha("Subindo Postgres e Redis (docker compose)...")
+    resultado = subprocess.run(
+        [shutil.which("docker") or "docker", "compose", "up", "-d", "postgres", "redis"],
+        cwd=RAIZ,
+        check=False,
+    )
+    return resultado.returncode == 0
+
+
+def _aplicar_migracoes() -> bool:
+    console.linha("Aplicando migrações...")
+    from alembic import command
+    from alembic.config import Config
+
+    try:
+        command.upgrade(Config(str(RAIZ / "alembic.ini")), "head")
+    except Exception as exc:
+        console.erro(f"falha ao migrar: {exc}")
+        console.linha(
+            console.cor(
+                "O banco está no ar? Rode `lumbra doctor` para um diagnóstico completo.", "azul"
+            )
+        )
+        return False
+    return True
+
+
+def _servir(*, reload: bool, host: str, porta: int) -> int:
+    import uvicorn
+
+    console.linha(
+        console.cor(
+            f"\nAPI em http://{host}:{porta}  |  console em "
+            f"http://{host}:{porta}/api/v1/dev/console  |  saúde em "
+            f"http://{host}:{porta}/api/v1/system/health",
+            "verde",
+        )
+    )
+    uvicorn.run(
+        "lumbra.api.main:create_default_app",
+        factory=True,
+        host=host,
+        port=porta,
+        reload=reload,
+        log_level="info",
+    )
+    return 0
+
+
+def comando_dev(args: argparse.Namespace) -> int:
+    console.titulo("Lumbra — ambiente de desenvolvimento")
+    os.environ.setdefault("LUMBRA_ENVIRONMENT", "local")
+    os.environ.setdefault("LUMBRA_PERSISTENCE", "postgres")
+    _subir_servicos()
+    if not _aplicar_migracoes():
+        return 1
+    resultados = asyncio.run(
+        checks.executar(_settings(), apenas=(checks.check_postgres, checks.check_ollama))
+    )
+    for resultado in resultados:
+        if resultado.status is not checks.Status.OK:
+            _imprimir_resultado(resultado)
+    return _servir(reload=not args.no_reload, host=args.host, porta=args.port)
+
+
+def comando_up(args: argparse.Namespace) -> int:
+    """Produção local: sem recarga automática e SEM subir se algo estiver
+    quebrado — em produção, falhar cedo é melhor que servir errado."""
+    console.titulo("Lumbra — modo produção local")
+    os.environ.setdefault("LUMBRA_ENVIRONMENT", "production")
+    os.environ.setdefault("LUMBRA_PERSISTENCE", "postgres")
+    _subir_servicos()
+    if not _aplicar_migracoes():
+        return 1
+    resultados = asyncio.run(checks.executar(_settings()))
+    problemas = [r for r in resultados if r.status is checks.Status.FAIL]
+    if problemas:
+        console.linha(console.cor("Não vou subir com problemas pendentes:", "vermelho"))
+        for problema in problemas:
+            _imprimir_resultado(problema)
+        return 1
+    return _servir(reload=False, host=args.host, porta=args.port)
+
+
+# ---------------------------------------------------------------- version
+
+
+def comando_version(_args: argparse.Namespace) -> int:
+    console.silenciar_logs()
+    print(f"lumbra {checks.versao_da_plataforma()} (python {sys.version.split()[0]})")
+    return 0
+
+
+# ---------------------------------------------------------------- parser
+
+
+def construir_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="lumbra",
+        description="Lumbra — plataforma pessoal de inteligência.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "exemplos:\n"
+            "  lumbra doctor          verifica o ambiente e diz como corrigir\n"
+            "  lumbra init            assistente de primeira execução\n"
+            "  lumbra dev             sobe tudo para desenvolvimento\n"
+            "  lumbra up              sobe em modo produção local\n"
+        ),
+    )
+    sub = parser.add_subparsers(dest="comando", required=True)
+
+    doctor = sub.add_parser("doctor", help="diagnostica o ambiente")
+    doctor.add_argument("--json", action="store_true", help="saída legível por máquina")
+    doctor.add_argument(
+        "--verbose", action="store_true", help="mostra logs internos (depurar o diagnóstico)"
+    )
+    doctor.set_defaults(func=comando_doctor)
+
+    dev = sub.add_parser("dev", help="sobe o ambiente de desenvolvimento")
+    dev.add_argument("--host", default="127.0.0.1")
+    dev.add_argument("--port", type=int, default=8000)
+    dev.add_argument("--no-reload", action="store_true")
+    dev.set_defaults(func=comando_dev)
+
+    up = sub.add_parser("up", help="sobe em modo produção local")
+    up.add_argument("--host", default="127.0.0.1")
+    up.add_argument("--port", type=int, default=8000)
+    up.set_defaults(func=comando_up)
+
+    init = sub.add_parser("init", help="assistente de primeira execução")
+    init.add_argument("--host", default="http://127.0.0.1:8000")
+    init.set_defaults(func=lambda args: _comando_init(args))
+
+    versao = sub.add_parser("version", help="mostra a versão")
+    versao.set_defaults(func=comando_version)
+    return parser
+
+
+def _comando_init(args: argparse.Namespace) -> int:
+    console.silenciar_logs()
+    from lumbra.cli.wizard import executar_wizard
+
+    return asyncio.run(executar_wizard(args.host))
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = construir_parser()
+    args = parser.parse_args(argv)
+    try:
+        return int(args.func(args))
+    except KeyboardInterrupt:
+        console.linha("\ninterrompido")
+        return 130
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
+
+
+# canário anti-truncamento

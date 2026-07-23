@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+.coverage
+.coverage.*
+data/
+htmlcov/
+dist/
+build/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+node_modules/
+lumbra-history.bundle

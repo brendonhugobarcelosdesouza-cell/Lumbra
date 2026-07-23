@@ -1,0 +1,248 @@
+# 20 — Architecture Decision Records
+
+Formato: contexto → decisão → consequências. Status: ✅ aceita.
+
+## ADR-001 — Microkernel + Event-Driven como espinha dorsal ✅
+
+**Contexto.** Requisito de extensibilidade total (plugins, agentes, módulos de vida) e proibição de acoplamento.
+**Decisão.** Core Intelligence Engine como kernel mínimo; tudo mais é extensão registrada; comunicação exclusivamente via Event Bus tipado.
+**Consequências.** (+) módulos e plugins plugáveis sem tocar no núcleo; auditoria natural (event log); replay para debug. (−) curva de aprendizado; debugging distribuído — mitigado com correlation_id e tracing (doc 16); consistência eventual entre módulos — aceitável para o domínio.
+
+## ADR-002 — Local-first com nuvem como par de sync ✅
+
+**Contexto.** Offline-first e privacy-first são princípios; custo cloud com 1M usuários; concorrentes cloud-only têm latência e risco de privacidade.
+**Decisão.** Desktop roda o stack completo (indexação, vetores, RAG, agentes). Nuvem: sync E2E, web/mobile, conectores.
+**Consequências.** (+) privacidade real, latência mínima, custo por usuário baixíssimo (doc 19). (−) dois perfis de execução para manter — mitigado por hexagonal (mesmos domínio/use cases, adaptadores diferentes); web/mobile dependem da nuvem para busca pesada.
+
+## ADR-003 — pgvector no PostgreSQL (Qdrant atrás de port como opção) ✅
+
+**Contexto.** Prompt permite Qdrant ou pgvector. Vetores + relacional + grafo no mesmo banco simplifica operação, transações e backup, especialmente embutido no desktop.
+**Decisão.** pgvector como padrão; `VectorStorePort` permite Qdrant para cargas extremas.
+**Consequências.** (+) um banco a menos para operar/sincronizar/backup; joins entre chunks/entidades/documentos. (−) HNSW do pgvector abaixo do Qdrant em recall/latência em coleções enormes — irrelevante para coleções pessoais (10⁴–10⁶ chunks), e o port cobre o cenário extremo.
+
+## ADR-004 — Redis Streams como Event Bus (não Kafka) ✅
+
+**Contexto.** Redis já está no stack (cache, Celery). Kafka adicionaria operação pesada para volume que não teremos cedo.
+**Decisão.** Redis Streams com consumer groups, DLQ e retenção; schemas Pydantic versionados; event store durável em PG (`events_log`).
+**Consequências.** (+) zero infra nova; mesma semântica no desktop (Redis embutido ou fila in-process). (−) throughput e retenção menores que Kafka — o port de Event Bus permite troca se um dia passarmos de ~100k eventos/s.
+
+## ADR-005 — Camada de abstração de IA própria (sem framework pesado) ✅
+
+**Contexto.** Exigência de troca de modelos sem alterar o sistema; risco R-06 (vendor lock-in); frameworks (LangChain etc.) acoplam e mudam rápido.
+**Decisão.** `AIProviderPort` próprio (complete/stream/embed/transcribe/vision) + Model Router com política declarativa (custo, tarefa, privacidade `local_only`).
+**Consequências.** (+) controle total, testável com respostas gravadas, roteamento por sensibilidade é feature de privacidade. (−) reimplementamos conveniências (retries, rate limit) — custo pequeno e pago uma vez.
+
+## ADR-006 — Knowledge graph relacional em PG (não Neo4j) ✅
+
+**Contexto.** Grafo pessoal: 10³–10⁵ entidades, travessias curtas (profundidade ≤ 3), sempre filtradas por usuário.
+**Decisão.** `entities`/`entity_relations`/`entity_mentions` em PG com CTEs recursivas; vocabulário de relações versionado.
+**Consequências.** (+) sem segundo banco; transações com o resto do domínio; sync trivial. (−) sem álgebra de grafos avançada — não é requisito; se virar, projeção para um graph DB é possível a partir do event log.
+
+## ADR-007 — Desktop embarca PostgreSQL; modo lite com SQLite+sqlite-vec ✅
+
+**Contexto.** Paridade máxima desktop/cloud favorece PG embutido, mas o footprint incomoda em máquinas fracas.
+**Decisão.** Padrão: PG embutido gerenciado pelo app (mesmo esquema da nuvem). Modo lite opcional: SQLite + sqlite-vec com o mesmo esquema lógico via SQLAlchemy.
+**Consequências.** (+) um único conjunto de migrações/ORM; escolha por perfil de máquina. (−) matriz de teste dobra para a camada de dados — coberta por testcontainers + suite SQLite no CI.
+
+## ADR-008 — Cinco memórias em modelo unificado com consolidação ✅
+
+**Contexto.** Requisito de 5 tipos de memória; risco de fragmentar em 5 subsistemas.
+**Decisão.** Tabela única `memory_items` com `kind` + `ConsolidationPolicy` (promoção temporária→episódica→semântica/procedural; decaimento por importância/acesso; permanente só por ação do usuário).
+**Consequências.** (+) um índice vetorial, uma API de recall, auditabilidade única ("por que você lembra disso?"). (−) políticas por kind vivem em código, não em esquema — testadas por property-based tests.
+
+## ADR-009 — Electron (não Tauri) para o desktop v1 ✅
+
+**Contexto.** Stack exigida inclui Electron + Next.js; Tauri seria mais leve, mas o time compartilha código com o web app e precisa de maturidade de auto-update/assinatura.
+**Decisão.** Electron com processos utilitários para trabalho pesado; sidecar Python para o núcleo. Migração parcial a Tauri documentada como plano B (R-12).
+**Consequências.** (+) reuso total do frontend web; ecossistema maduro. (−) memória/tamanho — mitigado por lazy loading e medição contínua de p95 de interação.
+
+## ADR-010 — CQRS apenas onde leitura ≠ escrita ✅
+
+**Contexto.** CQRS "quando necessário" (prompt). Aplicar em tudo = cerimônia sem ganho.
+**Decisão.** CQRS real em: busca universal (read model desnormalizado), timeline/dashboard, projeções do knowledge graph. CRUD simples permanece simples.
+**Consequências.** (+) complexidade proporcional ao valor. (−) dois estilos no código — documentado por convenção de pastas (`application/commands`, `application/queries`).
+
+## ADR-011 — Sync por log de operações E2E com CRDT/LWW por tipo ✅
+
+**Contexto.** Multi-dispositivo com offline prolongado; servidor não pode ler conteúdo (privacy).
+**Decisão.** Log de operações por dispositivo (`sync_ops`, relógio Lamport), payload cifrado no cliente. Resolução: CRDT (listas/texto colaborativo futuro), LWW por campo (maioria), regras de domínio para casos críticos (dose confirmada vence qualquer conflito).
+**Consequências.** (+) E2E de verdade; auditável; testável por property-based (convergência). (−) complexidade alta — por isso adiado para depois do MVP (R-03).
+
+## ADR-012 — Proatividade explicável: regras primeiro, IA por cima ✅
+
+**Contexto.** Requisito de proatividade; risco de sugestões erradas/assustadoras minarem confiança.
+**Decisão.** Motor de insights em duas camadas: regras determinísticas (vencimentos, doses, conflitos de agenda) geram a maioria; IA gera hipóteses adicionais que passam por limiar de confiança. Todo insight carrega `explanation` + `evidence` e botão "por que estou vendo isso?". Feedback (accept/dismiss) alimenta memória procedural.
+**Consequências.** (+) confiável, auditável, barato (regras não gastam tokens). (−) menos "mágico" no início — correto: confiança precede magia.
+
+## ADR-013 — Python em src-layout com distribuição única `lumbra` ✅
+
+**Contexto.** O doc 04 esboçava `core/`, `adapters/`, `api/` como diretórios de topo. Na implementação, pacotes separados exigiriam N pyprojects e resolução de dependências interna — cerimônia sem benefício nesta fase.
+**Decisão.** Distribuição única `lumbra` em `src/lumbra/{shared,domain,application,ports,kernel,adapters,agents,api}`; fronteiras arquiteturais aplicadas por convenção + lint de imports (a adicionar) em vez de fronteiras de pacote.
+**Consequências.** (+) um pyproject, um lockfile, refactors atômicos; src-layout impede imports acidentais do diretório de trabalho. (−) fronteiras dependem de disciplina/lint; se um módulo precisar de release independente (ex.: plugins-sdk), extrai-se para pacote próprio nesse momento.
+
+## ADR-014 — Topologia do Event Bus: um stream Redis por tipo de evento ✅
+
+**Contexto.** Alternativas: um stream global (consumidores filtram no cliente — desperdício e acoplamento) ou um stream por contexto (granularidade intermediária, mas consumidores de um único tipo pagam pelo contexto inteiro).
+**Decisão.** Um stream por tipo (`{prefix}:events:{tipo}`); consumer group por consumidor; padrões `ctx.*`/`*` expandidos contra o EventRegistry no start — o catálogo (doc 10) é a fonte de verdade das assinaturas. Idempotência com chave `SET NX` + TTL por `(consumer, event_id)`; retry via XCLAIM após idle mínimo; DLQ por consumidor com redrive.
+**Consequências.** (+) consumo seletivo sem filtragem no cliente; DLQ e métricas de lag por tipo; retenção configurável por MAXLEN. (−) número de chaves cresce com o catálogo — irrelevante para centenas de tipos; consumidores curinga precisam do registro carregado antes do start (imposto pelo kernel na Etapa 3).
+
+## ADR-015 — Skills e Tools são um único conceito, num único registro ✅
+
+**Contexto.** Requisitos pediam um "Tool Registry" para agentes e um sistema de "Skills" encapsulando toda ação (`create_alarm`, `search_memory`, `scan_pdf`...). São o mesmo padrão: capacidade nomeada, descobrível, com entrada/saída tipadas e permissões. Dois registros paralelos gerariam duplicação e ambiguidade permanente.
+**Decisão.** Conceito único: **Skill**, no `SkillRegistry` do kernel. Manifesto declarativo (nome snake_case, versão, provedor, capacidades para discovery, escopos exigidos) + entrada/saída Pydantic + handler assíncrono. Toda execução passa pelo registro: validação → permissão → medição → evento `skill.executed`/`skill.failed`. Capability Discovery = consulta ao registro (`find`) e é, ela própria, uma skill (`list_capabilities`).
+**Consequências.** (+) agentes não importam módulos (dependem só do registro); plugins adicionam skills sem tocar no kernel; o Planner enxerga o catálogo inteiro; observabilidade e auditoria num ponto único. (−) chamadas intra-módulo triviais também pagam o pedágio do registro quando expostas — correto: se é capacidade do sistema, é skill.
+
+## ADR-016 — Event sourcing seletivo: log de auditoria primeiro ✅
+
+**Contexto.** Requisito de avaliar event sourcing onde agrega valor (memória, automações, histórico, auditoria), sem retrabalho futuro.
+**Decisão.** Duas camadas: (1) **agora** — todo envelope publicado passa pelo `kernel.publish()`, que anexa ao `EventStorePort` (append-only, idempotente por event_id) antes do bus: auditoria completa, replay em dev e insumo para proatividade retrospectiva, sem acoplar estado a eventos. (2) **quando os contextos existirem** — sourcing verdadeiro (estado derivado do log) nos agregados onde histórico É o domínio: `MedicationCourse` (doses), `AutomationRun` (passos), consolidação de memória. CRUD simples permanece CRUD (mesmo racional do ADR-010).
+**Consequências.** (+) nenhum evento se perde desde o dia 1; migrar um agregado para sourcing depois é possível porque o log já existe; custo mínimo hoje (um append). (−) o log cresce — particionamento e arquivamento frio já previstos no doc 08 (`events_log`).
+
+
+## ADR-017 — Autenticação: ports desde o dia 1, Argon2id, JWT com rotação ✅
+
+**Contexto.** O E0 exige API preparada para autenticação/auditoria antes de existir banco. Adiar auth criaria rotas nascendo públicas (dívida de segurança); implementar usuários direto no PG acoplaria a etapa à persistência.
+**Decisão.** Identidade atrás de `UserStorePort` (adapter in-memory agora, PG na camada de persistência — mesma interface). Senhas com Argon2id (OWASP; parâmetros recalibráveis via `needs_rehash`). Tokens JWT HS256 nesta fase com par access(15min)/refresh(14d), tipo verificado (refresh nunca autoriza request), `jti` UUIDv7 em todo token — base pronta para revogação/detecção de reuso sem quebrar contratos. Login anti-enumeração: 401 idêntico e hash fictício para igualar tempo de resposta. Toda rota de negócio nasce atrás da guarda Bearer; `/health` e `/ready` públicos. Trilha de auditoria: middleware loga método/rota/status/duração/sujeito (nunca corpos), e eventos `auth.*` são publicados via kernel (event store + bus).
+**Consequências.** (+) trocar in-memory→PG e HS256→chaves assimétricas é configuração/adapter, não refactor; auditoria por usuário desde o primeiro login. (−) sem persistência, contas morrem com o processo — aceitável até a camada de dados do E1; revogação de refresh ainda não implementada (jti reservado; sessões chegam com o PG).
+
+## ADR-018 — Taxonomia de skills por domínio: `domínio.ação` ✅
+
+**Contexto.** Skills como funções isoladas (`create_alarm`, `find_document`) viram um espaço plano sem organização conforme o catálogo cresce para centenas de capacidades; discovery, permissões e documentação ficam sem estrutura.
+**Decisão.** Todo nome de skill segue `domínio.ação` (regex imposto no manifesto): `document.search`, `document.summarize`, `memory.search`, `alarm.create`, `system.list_capabilities`, `context.gather`. O domínio agrupa skills no discovery, alinha com os escopos de permissão (`read:documents` ↔ `document.*`) e com os contextos de eventos (doc 10). Breaking change aplicado com apenas 2 skills existentes (custo mínimo, momento certo).
+**Consequências.** (+) catálogo navegável por domínio; base natural para permissões por família; simetria eventos/escopos/skills. (−) nomes um pouco mais longos — irrelevante.
+
+## ADR-019 — Pipeline canônico de ingestão e DataSourcePort universal ✅
+
+**Contexto.** O E1 começa com filesystem, mas Drive, OneDrive, Dropbox, e-mail, WhatsApp, Telegram e Notion virão. Cada fonte com pipeline próprio geraria N caminhos de código divergentes.
+**Decisão.** Toda fonte implementa `DataSourcePort` (kind, scan incremental, read) e alimenta UM único pipeline: **Data Source → Extractor → OCR (automático p/ conteúdo de imagem) → Metadata Engine (entidades, datas, valores, pessoas, locais, empresas, categorias) → Chunking → Embeddings (via AI Gateway, nunca provedor direto) → Knowledge Graph → Indexação → Memória**. Cada estágio é um port; o pipeline é orquestrado por eventos (`indexing.*`, doc 10). O esquema já suporta tudo: `documents.metadata` (JSONB do Metadata Engine), `chunks` (vetorial+léxico), grafo (`entities`/`entity_relations`/`entity_mentions`).
+**Consequências.** (+) integrar o Google Drive no Beta = escrever um adaptador de ~1 arquivo; OCR/metadata beneficiam todas as fontes automaticamente; testes do pipeline valem para qualquer fonte. (−) o pipeline completo exige disciplina de não criar atalhos por fonte — imposto por revisão e pelo fato de os estágios serem ports.
+
+## ADR-020 — Pipeline resiliente: máquina de estados persistida com retomada exata ✅
+
+**Contexto.** Indexar milhares de arquivos leva tempo; quedas de energia/app não podem reiniciar tudo, e cada tipo de mídia precisa de estágios diferentes sem pipelines paralelos.
+**Decisão.** Cada documento carrega `processing_state` persistido (pending → extracting/ocr → metadata → chunking → embedding → knowledge_graph → indexed | failed). O `PipelineRunner` executa um plano de estágios resolvido por tipo de documento (com override por DataSource — `PipelineResolver`), persiste o contexto intermediário (`document_processing`) e a lista `stages_done` a cada estágio concluído: retomada continua EXATAMENTE do estágio interrompido; estágios são idempotentes por contrato. Toda execução grava `document_timeline` (horário, duração, sucesso, mensagem, métricas — req. 8) e alimenta o `MetricsPort` (req. 9). Nova versão de conteúdo reseta o contexto (bug real pego pelo teste E2E de reindexação); a timeline histórica é preservada. Versionamento (req. 2): identidade lógica por (user, source, uri); `document_versions` guarda hash, parent, motivo e datas — consulta/restauração de versões antigas tem a base pronta. Dedup (req. 7): hash idêntico = UNCHANGED (zero processamento); near-duplicates semânticos entram com embeddings (Etapa 3).
+**Consequências.** (+) multimodal por construção: áudio/vídeo = novos estágios (speech_to_text, audio_extract) registrados no mesmo runner; nenhuma fonte cria pipeline próprio. (−) contexto persistido cresce com textos grandes — JSONB por documento, descartado no reset; aceitável e monitorado por métrica.
+
+## ADR-021 — Extensão por plugins: Metadata Engine, Chunking e OCR ✅
+
+**Contexto.** Extração de metadados, estratégias de chunking e OCR evoluem rápido e não podem exigir mudanças estruturais.
+**Decisão.** Três pontos de extensão independentes: `MetadataExtractorPort` (plugins isolados — falha de um não afeta os demais; 8 determinísticos hoje: email, phone, date, money, cpf/cnpj com validação de dígitos, language, keywords; Person/Company/Location/Classifier/Summary entram via AI Gateway na Etapa 3 sem tocar no engine), `ChunkerPort` + `ChunkerRegistry` (paragraph, sentence, markdown, code; seleção por mime; Semantic Chunker via AI Gateway), e `OCRProviderPort` (estágio pronto; sem provider configurado a falha é explícita e retomável — Tesseract/PaddleOCR/API entram como adapter de 1 arquivo).
+**Consequências.** (+) crescer = adicionar plugin/adapter; catálogo testável isoladamente. (−) qualidade dos extractors regex é limitada — decisão consciente: determinístico primeiro, IA por cima (mesmo racional do ADR-012).
+
+## ADR-022 — Developer Console: ferramenta permanente de engenharia ✅
+
+**Contexto.** Testar skills, agentes e o pipeline via Swagger/curl é lento e não mostra o que acontece por dentro; endpoints provisórios viram dívida técnica.
+**Decisão.** O Developer Console é componente PERMANENTE da plataforma (não é feature de usuário final): `ExecutionTracker` no kernel executa qualquer skill (e, futuramente, agentes) como tarefa rastreada — entrada/saída JSON, duração, status, erro com traceback, cancelamento, reexecução, histórico em anel e export. Observabilidade acoplada por composição, não por acoplamento: um consumidor curinga do Event Bus captura eventos (correlacionados à execução por correlation_id) e um *log tap* no pipeline do structlog captura logs estruturados. UI de arquivo único em `/api/v1/dev/console` com login integrado (e-mail/senha → token, sem colar tokens): abas Executar, Histórico, Eventos, Logs, Documentos, Busca, Grafo e Métricas. Painéis de AI Gateway/Context Engine/embeddings são preenchidos quando os componentes chegarem (Etapa 3+), sem mudança estrutural. Habilitado apenas fora de produção; todos os dados atrás do Bearer (a página em si é markup público).
+**Consequências.** (+) toda nova skill/agente nasce testável manualmente no mesmo minuto; depuração com eventos+logs+timeline em um lugar; o console validou `document.index` de ponta a ponta no próprio CI. (−) buffers em memória (histórico/eventos/logs em anel) — suficiente para engenharia; persistência de execuções só se virar necessidade real.
+
+## ADR-023 — Explainability First: ExplainPort e Explain Engine ✅
+
+**Contexto.** Princípio permanente nº 1: nenhuma decisão do sistema pode ser caixa-preta — busca, memória, contexto, planner, AI Gateway, OCR, metadata, chunking, ranking, grafo, scheduler, notificações, agentes, skills e automações devem responder por quê/com o quê/alternativas/algoritmo/confiança/consequências, e a decisão deve ser reconstruível.
+**Decisão.** Contrato único `ExplainPort` com o modelo `Explanation` (component, decision, reason, inputs_used, alternatives, algorithm, confidence, consequences, correlation_id, occurred_at). O kernel provê o Explain Engine (in-memory hoje; persistência quando o replay exigir) e o injeta nos componentes; o SkillRegistry registra explicação de TODA execução de skill automaticamente. Explicações são consultáveis por correlação/componente no Developer Console (`/api/v1/dev/explanations`) — reconstruir uma decisão = juntar explicações + eventos + timeline da mesma correlação. Componentes novos DEVEM registrar explicações como parte do Definition of Done; a busca já embute `explanation` por hit e o pipeline explica cada estágio na timeline — ambos migram para o contrato comum conforme evoluem.
+**Consequências.** (+) "por que este documento apareceu?" vira consulta, não arqueologia de logs; auditoria de decisões de IA nasce pronta para o AI Gateway (Etapa 3). (−) disciplina obrigatória em cada componente — imposta por revisão e pelo DoD.
+
+## ADR-024 — Human-in-the-Loop: níveis de risco e política de aprovação ✅
+
+**Contexto.** Princípio permanente nº 2: ações com impacto no mundo real (excluir/mover arquivos, enviar e-mails/mensagens, pagamentos, alterar agenda, apagar memórias) não podem executar sem política do usuário.
+**Decisão.** Todo `SkillManifest` declara `risk_level` (LOW/MEDIUM/HIGH/CRITICAL; padrão LOW = leitura/consulta). Skills que mutam o mundo externo DEVEM declarar ≥ MEDIUM. Um `ApprovalPolicyPort` (por usuário × ação: `auto` | `confirm` | `never`) será consultado pelo SkillRegistry antes de executar skills ≥ MEDIUM — implementação chega junto com a primeira skill de escrita externa; o campo no manifesto existe DESDE JÁ para que nenhuma skill nasça sem classificação. Política extensível: defaults por nível (CRITICAL nunca é `auto` por padrão), overrides por skill, trilha de aprovações auditada como evento `approval.*`.
+**Consequências.** (+) o catálogo inteiro já carrega classificação de risco; o Developer Console a exibe; agentes autônomos (princípio 15) herdam o freio humano por construção. (−) fricção deliberada em ações perigosas — é o objetivo.
+
+## ADR-025 — AI Gateway v1: embeddings locais primeiro, trace total ✅
+
+**Contexto.** Princípios 6 (nenhuma chamada direta a provedores) e 14 (privacy first) exigem que a primeira capacidade de IA da plataforma já nasça atrás do Gateway, com observabilidade completa.
+**Decisão.** `AIGatewayPort` com roteamento por política de privacidade: `local_only` (padrão) jamais usa provedor não-local — sem provedor local elegível, a falha é explícita (`NoEligibleProviderError`), nunca um vazamento silencioso. Primeiro provedor: `FastEmbedProvider` (ONNX, `paraphrase-multilingual-MiniLM-L12-v2`, 384 dims, ~0,22 GB, multilíngue PT/EN, ~5 ms por embed em CPU) — download único para o cache do usuário, depois 100% offline. Dimensão do esquema migrada 768→384 (migração 0003); trocar de modelo = migração + reindex, decisão consciente. TODA chamada gera `AICallRecord` (provider, modelo, propósito, privacidade, unidades, chars, latência, custo, sucesso/erro, correlação) num ring de trace exposto no console (`/api/v1/dev/ai-calls`) + métricas (`ai_calls`, `ai_call_ms`) + `Explanation` com as alternativas de roteamento (ADR-023). Skill `ai.embed` registrada pelo `AIModule` (Capability Driven). Provedores cloud (OpenAI/Anthropic/Gemini) e chat/completions entram no MESMO port com custo real por token — extensão aditiva.
+**Consequências.** (+) privacidade verificada por teste (dado nunca toca provedor cloud sob `local_only`); AI Trace desde a primeira chamada; agentes usam IA sem conhecer provedores. (−) modelo pequeno tem recall menor que embeddings de ponta — mitigado pela busca híbrida (léxica compensa) e trocável por migração.
+
+## ADR-026 — Busca híbrida: fusão RRF de léxico + vetorial, explicada por componente ✅
+
+**Contexto.** Com embeddings persistidos nos chunks (ADR-025), a busca precisa combinar o casamento exato de termos (tsvector/ts_rank, forte para nomes, códigos, valores) com a similaridade semântica (pgvector/cosseno, forte para paráfrases — "locação"≈"aluguel"). Scores de ts_rank e de cosseno vivem em escalas incomparáveis; normalizá-los é frágil e dependente de corpus.
+**Decisão.** Fusão por **Reciprocal Rank Fusion** (Cormack et al., 2009): cada lista contribui `1/(k+posição)` com `k=60` — usa apenas POSIÇÕES, imune a escalas, sem parâmetros a calibrar por corpus. Implementação: duas consultas top-50 (léxica e vetorial por usuário), fusão pura em `fuse_rrf()` (testável sem banco). O estágio `embedding` entra no plano canônico após `index` (chunks persistidos ganham vetores via AI Gateway, propósito `indexing`, `local_only`; lote de 64; idempotente — reexecução regrava). `document.find` embute a consulta (propósito `query`) e chama `SearchPort.hybrid`; **degradação explícita**: sem gateway ou sem provedor elegível, cai para léxica pura e a resposta declara `mode: lexical` — busca nunca quebra por indisponibilidade de IA. Cada hit explica os DOIS componentes (posição léxica + ts_rank, posição vetorial + similaridade, score RRF) e o Explain Engine registra a decisão de modo por consulta (ADR-023). O console consome a própria skill `document.find` — mesmo caminho do produto.
+**Consequências.** (+) paráfrases encontram documentos sem termos em comum, termos exatos continuam fortes; "por que este documento apareceu?" responde componente a componente. (−) duas consultas por busca (aceitável: pools de 50 com índices HNSW+GIN); k=60 é convenção da literatura — recalibrar apenas com evidência do golden set (Etapa 3c).
+
+## ADR-027 — Memória em cinco camadas: decaimento, reconsolidação e arquivamento ✅
+
+**Contexto.** E1-05/06: o sistema deve "lembrar como um cérebro" — camadas com dinâmicas distintas — e o usuário deve ter controle total (ver/editar/apagar). O doc 08 já definia `memory_items` unificada com `kind`.
+**Decisão.** Tabela única `memory_items` (migração 0004) com `kind` ∈ temporary/episodic/semantic/procedural/permanent, embedding 384d + tsvector (mesma busca híbrida dos chunks). A matemática é PURA no domínio (`domain/memory.py`): força efetiva = importância x 0.5^(dias desde o último acesso / meia-vida da camada) — meias-vidas: temporary 1d, episodic 30d, semantic 180d, procedural 365d, permanent ∞. **Reconsolidação**: todo recall fortalece a memória acessada (importância +0.05, saturando em 1). Recall (`memory.search`) funde léxico+vetorial por RRF (ADR-026), filtra candidatos vetoriais com similaridade < 0.30 (ruído não é recall — lição de teste real: memória importante-mas-irrelevante superava a relevante) e modula por força: `score = RRF x (0.5 + 0.5xforça)`; tudo explicado por hit e por decisão. **Consolidação** (`memory.consolidate`): expira temporárias vencidas e ARQUIVA (nunca apaga) memórias com força < 0.05; permanent não decai. Apagar é direito exclusivo do usuário: `memory.forget` (risco MEDIUM, ADR-024) exclui de verdade, com posse verificada. API `/api/v1/memory` é camada fina sobre as skills — API, agentes e console usam o MESMO caminho.
+**Consequências.** (+) memória viva: o que é usado permanece, o que não é some do recall gradualmente e de forma explicável; privacidade preservada (embeddings locais). (−) consolidação é manual/skill por ora — agendador entra com o scheduler; sumarização de episódios em fatos semânticos (Memory Agent) fica para o E4 com chat.
+
+## ADR-028 — Chat/completions no AI Gateway: Ollama local + Anthropic cloud ✅
+
+**Contexto.** E2 (Chat assistente) precisa de um LLM de conversação. O hardware do usuário (GPU de 6GB) roda bem modelos locais de até ~7B via Ollama — privados e sem custo, mas abaixo de um modelo de fronteira em raciocínio complexo, citações e PT-BR. A decisão (registrada com o usuário) foi: ambos os provedores desde já, mesmo port, mesma disciplina de roteamento por privacidade já usada em embeddings (ADR-025).
+**Decisão.** `AIGatewayPort.chat()` — extensão aditiva do mesmo contrato: `ChatProviderPort` (name/model/is_local/cost_usd/complete), roteamento idêntico ao de embeddings (`local_only` nunca sai da máquina; `allow_cloud` autoriza explicitamente, princípio 14) mais um campo novo, `ChatRequest.provider`, que permite forçar um provedor elegível específico — a base técnica de "escolher modelo por conversa" (backlog E2-04). `OllamaChatProvider` fala HTTP direto com o daemon já instalado pelo usuário (`/api/chat`, sem SDK extra); `AnthropicChatProvider` idem contra a Messages API (sem SDK, para não inflar dependências), só é elegível registrado quando uma `api_key` é configurada (opt-in — sem chave, o provedor cloud nem existe no roteamento) e calcula custo real por token (tabela de preço configurável, pois preços mudam — Haiku 4.5 confirmado em jul/2026: $1/$5 por MTok). Todo chat gera `AICallRecord` (kind=completion) com custo real, visível no AI Trace; toda decisão de roteamento vira `Explanation`. Ordem de registro = prioridade sob `allow_cloud`: local primeiro — o padrão do sistema para usuários finais continua privado; usar Claude como padrão durante a construção/validação do E2 é uma escolha explícita de quem chama (`provider="anthropic"` + `allow_cloud`), não o comportamento padrão da plataforma.
+**Consequências.** (+) mesma garantia de privacidade dos embeddings estendida ao chat; trocar/adicionar provedor de chat é aditivo (Ollama poderia crescer para outro modelo, ou entrar OpenAI/Gemini, sem tocar no domínio); custo real desde a primeira chamada cloud. (−) sem SDKs oficiais, upgrades de API exigem atualizar o parsing manualmente (aceito: contrato HTTP simples e estável em ambos); preço do Anthropic é hardcoded como default e precisa de revisão periódica.
+
+## ADR-029 — Chat com RAG: contexto via Context Engine e citações verificáveis ✅
+
+**Contexto.** E2-01/E2-02 pedem um assistente que responda sobre a vida do usuário citando as fontes. Os ingredientes já existiam isolados (busca híbrida ADR-026, memória ADR-027, chat no Gateway ADR-028); faltava a junção — e ela precisa respeitar o princípio nº 5 (Context First: nada de componente consultando banco direto) e o nº 13 (tudo explicável).
+**Decisão.** O chat NÃO busca nada: pede contexto ao **Context Engine**, que consulta provedores registrados em paralelo, com timeout e isolamento de falhas. Dois provedores nesta etapa — `DocumentContextProvider` e `MemoryContextProvider` — e ambos delegam às SKILLS existentes (`document.find`, `memory.search`), não ao banco: um único caminho de ranking, com permissões, eventos e explicações incluídos de graça (e o recall ainda reforça a memória acessada, ADR-027). Cada `ContextFragment` carrega proveniência em `metadata` (kind, ref_id, título, uri, score, e o "porquê" do ranking). O prompt injeta o contexto **numerado** como turno de sistema imediatamente antes da última pergunta (perto do que deve ser respondido, sem poluir turnos anteriores); a regra de citação é explícita no system prompt e proíbe afirmar fatos pessoais fora do contexto. A MESMA numeração vira `message_sources` no banco — `[2]` na resposta aponta para um chunk_id/memory_id concreto, então a citação é **verificável**, não decorativa. `message_sources` generaliza o DDL planejado no doc 08: a citação referencia documento OU memória (o assistente cita memórias com o mesmo rigor). A política de privacidade/provedor é **por conversa** (`model_policy`), default `local_only` — abrir uma conversa que usa nuvem é escolha explícita do usuário (princípio nº 14, backlog E2-04). API `/api/v1/chat` é camada fina sobre as skills.
+**Consequências.** (+) todo o investimento anterior (pipeline, RRF, memória, Gateway) se converte em produto numa única camada fina; adicionar uma nova fonte de contexto (agenda, e-mail, tarefas) é registrar um provedor — o chat não muda. (−) sem streaming ainda (resposta JSON completa; SSE é a próxima sub-etapa) e sem multimodal (E2-03); o contexto é montado por relevância posicional simples — reranking dedicado entra se o golden set de chat mostrar necessidade.
+
+## ADR-030 — Streaming SSE: fallback no port, trace fechado no fim, fontes antes dos tokens ✅
+
+**Contexto.** Com modelo local de 7B, esperar a resposta inteira antes de mostrar qualquer coisa torna o chat desagradável — o usuário fica olhando para o vazio por dezenas de segundos. O doc 11 já especificava SSE com eventos `token`/`sources`/`done`. Três decisões não óbvias apareceram.
+**Decisão.** (1) **Streaming é opcional para o provedor, obrigatório para a plataforma**: `ChatProviderPort.stream()` tem implementação PADRÃO que chama `complete()` e entrega tudo num pedaço só. Quem sabe transmitir sobrescreve (Ollama lê NDJSON, Anthropic lê SSE); quem não sabe continua funcionando — a borda nunca precisa saber a diferença. (2) **O trace fecha no fim da transmissão**, não no começo: só ali os tokens são conhecidos. Se a conexão cair no meio, o erro é registrado com o que já havia sido gerado — uma resposta interrompida não some do AI Trace. (3) **As citações são emitidas ANTES do primeiro token** (`sources` primeiro): a interface mostra de onde a resposta vem enquanto ela ainda está sendo escrita, e o usuário pode julgar as fontes antes de ler a conclusão — coerente com Explainability First. Streaming fica FORA do envelope de skill de propósito (skills são pedido→resposta única, com um registro de execução único); `ChatModule.stream()` é um método explícito que compartilha os mesmos helpers de `chat.send` (`_prepare`/`_finalize`), então posse, contexto, citações, explicação e evento são idênticos nos dois caminhos — não há um "caminho de streaming" com garantias mais fracas. Erros depois do primeiro byte viram `event: error` no próprio stream, porque o status HTTP 200 já foi enviado e não pode ser retirado.
+**Consequências.** (+) chat utilizável com modelo local; adicionar provedor novo não exige implementar streaming; nenhuma garantia de auditoria se perde no caminho rápido. (−) dois caminhos de código para manter em sincronia (mitigado pelos helpers compartilhados e por testes que comparam a persistência dos dois); SSE não permite cancelamento pelo cliente ainda (o backlog E2-07 cobre); erro pós-stream exige que o cliente leia `event: error` em vez de checar o status.
+
+## ADR-031 — Escolha de modelo por conversa: validação na escolha, não no envio ✅
+
+**Contexto.** E2-04 pede que o usuário escolha o provedor/modelo de cada conversa. A infraestrutura já existia (`ChatRequest.provider`, `model_policy` na conversa); faltava expor, e decidir ONDE a regra de privacidade é aplicada.
+**Decisão.** A validação acontece na **escolha** (`chat.start` / `chat.set_policy`), não no primeiro envio: pedir um provedor inexistente ou um provedor de nuvem sem `allow_cloud` falha na hora, com a lista do que existe. O contrário — validar só quando a mensagem é enviada — daria um erro tardio, longe da ação que o causou. A regra de privacidade é explícita e não tem exceção: **escolher um provedor cloud exige `allow_cloud` na mesma conversa** (princípio nº 14), e isso vale nos dois sentidos — não dá para rebaixar uma conversa para `local_only` deixando um provedor cloud fixado. `provider: ""` (string vazia) limpa a escolha e devolve a conversa ao roteamento padrão (local primeiro), distinto de `null`, que significa "não mexa nesta chave" — a diferença importa num PATCH parcial. `GET /chat/providers` publica o cardápio para a interface: nome, modelo, local/nuvem e **preço por milhão de tokens derivado do próprio contrato `cost_usd`** (chamando-o com 1M de cada lado), então o preço mostrado é o mesmo que será cobrado, sem tabela paralela para desincronizar. Cada mensagem persiste qual provedor a respondeu, então uma conversa que trocou de modelo no meio mantém o registro fiel de quem disse o quê.
+**Consequências.** (+) erro imediato e informativo; nenhum caminho leva dados à nuvem sem opt-in explícito; o histórico permite auditar qual modelo produziu cada resposta. (−) trocar de modelo no meio da conversa muda o "estilo" das respostas sem aviso ao modelo (o histórico é reenviado como se fosse dele); a validação consulta os provedores registrados a cada escolha (barato, mas é I/O de configuração no caminho da requisição).
+
+## ADR-032 — Cancelamento como capacidade da plataforma ✅
+
+**Contexto.** O E2-01 pedia cancelamento no chat, mas resolver só ali seria desperdiçar o problema: indexação, OCR, embeddings, buscas longas, agentes, automações e sincronizações têm exatamente a mesma necessidade. Antes desta decisão havia um `task.cancel()` no Developer Console que matava a corrotina por fora — o Ollama continuava gerando na GPU, sem ninguém para ler, porque a conexão HTTP nunca era fechada.
+**Decisão.** Um `CancellationToken` único para toda a plataforma (`shared/cancellation.py`), com quatro propriedades:
+
+1. **Árvore de propagação.** O kernel tem um token raiz; cada operação cria um filho. Cancelar um pai cancela todos os descendentes, e o desligamento do kernel cancela a raiz — nenhuma operação sobrevive ao processo. Filho nunca cancela pai.
+2. **Cooperativo com garantia.** `guard`/`guard_stream` abortam a tarefa subjacente e chamam `aclose()` no fluxo, o que fecha a conexão HTTP e faz o provedor **parar de trabalhar** — não é o cliente desistindo de esperar. Para código que ignora o token, o `ExecutionTracker` aplica um **prazo de cortesia** (0,5s) e então força `task.cancel()`: sem esse fallback, "cancelar" seria um pedido educado, não uma garantia. O prazo existe para a operação bem-comportada conseguir salvar trabalho parcial antes.
+3. **Quatro estados finais distintos:** `completed`, `cancelled`, `timeout`, `failed`. `TIMEOUT` é separado de `CANCELLED` porque "demorou demais" e "alguém desistiu" pedem respostas diferentes; e ambos são separados de `FAILED` porque **cancelamento não é falha** — ninguém deve ser acordado de madrugada porque um usuário fechou uma aba. A métrica `ai_calls_failed` não conta interrupções.
+4. **Prestação de contas.** O token acumula as etapas concluídas (`step()`); o cancelamento registra motivo, quem pediu, quando, e o que já tinha terminado. Isso vai para o Explain Engine, para o `AICallRecord.outcome` e para o console, que pinta interrupções em azul (nem verde de sucesso, nem vermelho de erro).
+
+Consequência de projeto importante: **interromper não descarta trabalho**. `OperationCancelledError` carrega o parcial produzido, e o chat persiste o texto gerado até ali como mensagem marcada `finish_reason="cancelled"`, com as citações já levantadas. O motivo `CLIENT_GONE` é detectado no SSE por polling de desconexão, e existe também um `POST .../messages/cancel` explícito — porque nem todo cliente pode simplesmente fechar a conexão (aba em segundo plano, app suspenso), e porque cancelar deve ser auditável em vez de um efeito colateral de rede.
+
+**Reutilização (o ponto da decisão).** Qualquer operação longa passa a herdar isso de graça: basta receber o token em `SkillContext.cancellation`, chamar `token.step(...)` entre etapas e `raise_if_cancelled()` em laços, ou passar `cancellation=` ao AI Gateway. Indexação, OCR, embeddings em lote, buscas, agentes, automações e sincronizações usarão o mesmo mecanismo, sem inventar o seu.
+**Consequências.** (+) um único conceito para toda a plataforma, com semântica de estado final consistente no console e nas métricas; recursos liberados de imediato; trabalho parcial preservado. (−) trechos síncronos de CPU precisam chamar `raise_if_cancelled()` explicitamente (cooperação não é automática); o fallback forçado pode interromper uma skill no meio de uma escrita não transacional — mitigado pelo prazo de cortesia, mas skills que escrevem em várias tabelas devem usar transação; o polling de desconexão do SSE custa uma verificação a cada 0,5s por stream ativo.
+
+## ADR-033 — Anexos de conversa são documentos, não uma entidade paralela ✅
+
+**Contexto.** O E2-03 pede arrastar arquivos e imagens para o chat. O caminho tentador é criar um fluxo próprio de "anexo" — extrair texto ali mesmo, guardar num campo e mandar para o prompt. Isso duplicaria extração, chunking, embeddings, dedup e versionamento, e criaria uma segunda classe de conteúdo que a busca universal não enxerga.
+**Decisão.** Um anexo é um **documento normal** que passa pelo pipeline de ingestão existente (extract/OCR → metadata → chunk → index → embedding → kg), com um vínculo à conversa onde foi enviado (`chat_attachments`). Consequências diretas: o arquivo anexado fica pesquisável para sempre pela busca universal, gera citação verificável idêntica à de qualquer documento, e ganha dedup — anexar o mesmo contrato duas vezes reaproveita o trabalho (`UNCHANGED`) em vez de reindexar. Para isso criei `document.ingest_file`, uma skill de ingestão de arquivo único que serve ao chat hoje e a conectores amanhã (um blob por vez), com modo **síncrono** (`wait=True`): quem acabou de anexar quer perguntar sobre aquilo agora, não daqui a pouco. Um `AttachmentContextProvider` garante que os anexos recentes da conversa entrem no contexto com prioridade alta mesmo que a busca por relevância os classifique abaixo de outros documentos — quem anexou um arquivo quer falar dele. Bytes ficam num `BlobStorePort` (sistema de arquivos local por padrão, princípio nº 14; trocar por S3/MinIO é outro adaptador). Imagens sem `OCRProvider` configurado terminam em estado **`unsupported`** com explicação, não em erro: o anexo existe, a conversa segue, e quando um OCR for plugado o mesmo arquivo é reprocessável.
+**Consequências.** (+) zero duplicação de lógica de ingestão; anexo pesquisável e citável como qualquer documento; dedup de graça; o pipeline evolui uma vez e o chat herda. (−) ingestão síncrona segura a resposta do upload pelo tempo do processamento (aceitável para arquivos de usuário, e cancelável via ADR-032; para arquivos grandes o modo `wait=False` já existe); o nome do arquivo é entrada não confiável e exige sanitização explícita (travessia de caminho testada); um anexo indexado fica visível na busca universal do usuário — é o comportamento desejado, mas precisa ficar claro na UI.
+
+## ADR-034 — Reflexão: o chat lembra entre conversas ✅
+
+**Contexto.** E2-06: sem memória entre conversas, o usuário se repete a cada sessão. As peças existiam (memória em 5 camadas do ADR-027, Context Engine do ADR-029); faltava alguém decidir **o que** merece virar memória.
+**Decisão.** Um módulo `reflection` separado (agentes vão reutilizá-lo) extrai fatos duráveis das conversas via LLM. Quatro escolhas definem o desenho: (1) **fora do caminho crítico** — dispara pelo evento `chat.message_answered`, depois da resposta entregue, e uma falha ali só significa não lembrar algo, nunca quebrar o chat; (2) **em lote** (a cada N respostas, padrão 4) porque fatos duráveis aparecem devagar e uma chamada de LLM por mensagem seria caro para pouco ganho; (3) **privacidade herdada** — usa a mesma política da conversa, então refletir jamais vira porta dos fundos para mandar conversa `local_only` à nuvem (princípio nº 14); (4) **memória é cara, não gratuita** — o prompt manda preferir lembrar de menos, credenciais são filtradas por padrão além da instrução, e cada candidato é deduplicado por similaridade contra o que já existe. Toda memória guarda `source_ref` com a conversa de origem e continua auditável e editável em `/memory`. O parser é tolerante (modelos de 7B embrulham JSON em cercas e explicações) mas valida com rigor e **nunca levanta exceção**.
+
+**Dois defeitos reais que este trabalho revelou** — ambos invisíveis até existir recall automático:
+
+* **Limiar de recall alto demais.** `_MIN_SIMILARITY` era 0,30. Medindo pares reais em PT-BR com o modelo em uso: "Onde eu moro mesmo?" × "O usuário mora em Curitiba" = **0,29** (descartado!), enquanto ruído genuíno fica em ~0,08. O corte passou para 0,20, com `tests/integration/test_memory_recall.py` travando a calibração — trocar o modelo de embedding agora exige revisitar conscientemente.
+* **RRF ignora magnitude.** Baixar o limiar expôs algo pior: a fusão ordenava só por posição, então uma memória fracamente relacionada (0,21) em 2º lugar praticamente empatava com a resposta certa (0,80) em 1º, e vencia pelo multiplicador de força. Agora **o lado vetorial é pesado pela similaridade** (`sim / (k + posição)`); o lado léxico continua puro, porque ali a posição já reflete o `ts_rank`.
+
+**Consequências.** (+) o assistente para de perguntar o que já foi dito; memórias rastreáveis até a conversa de origem; a correção da fusão melhora todo recall de memória, não só a reflexão. (−) uma chamada de LLM extra a cada N respostas (local e fora do caminho crítico, mas existe); a qualidade da extração depende do modelo — um 7B local erra mais que um modelo de fronteira, e o antídoto é o usuário poder editar/apagar em `/memory`; o filtro de credenciais é heurístico por palavra-chave e não substitui o cuidado no prompt.
+
+## ADR-035 — Busca de memória em lote: o N+1 que o recall automático escondia ✅
+
+**Contexto.** Auditoria da fase de consolidação. `memory.search` resolvia até 50 candidatos com **uma consulta por candidato** (`store.get`) e depois reconsolidava cada acerto com **outro UPDATE por item**. Enquanto a memória era usada manualmente isso passava despercebido; com o recall automático do chat (ADR-029) e a reflexão (ADR-034), toda mensagem enviada dispara uma busca — o custo virou caminho quente.
+**Decisão.** `MemoryStorePort` ganhou `get_many` (uma consulta com `IN`) e `touch_many` (um único `UPDATE ... CASE` para todas as reconsolidações). Medido com 120 memórias: **73 ms → 16 ms de mediana, 4,5× mais rápido**, com a suíte inteira verde. `touch_many` tem implementação padrão no port que chama `touch` em série, então adaptadores futuros funcionam sem otimizar — e otimizam quando valer a pena. A medição virou `tests/integration/test_perf_baseline.py`, para que a próxima regressão apareça como número, não como sensação.
+**Consequências.** (+) o caminho mais quente da plataforma ficou 4,5× mais rápido; o padrão em lote fica disponível para outros stores. (−) `get_many` carrega todos os candidatos na memória do processo (limitado pelo pool de 50, aceitável); o `UPDATE ... CASE` cresce com o número de acertos — irrelevante no limite atual de 5–20.
+
+## ADR-036 — Toda chave estrangeira precisa de índice ✅
+
+**Contexto.** Postgres não cria índice para FK automaticamente. A auditoria encontrou três sem índice (`entity_mentions.chunk_id`, `chat_attachments.document_id`, `chat_attachments.user_id`): apagar um documento ou usuário varreria a tabela filha inteira para checar referências.
+**Decisão.** Migração 0007 criando os três índices, e — mais importante que a correção — um **teste de esquema** (`test_db_audit.py`) que consulta o catálogo do Postgres e falha se qualquer FK ficar sem índice. Um segundo teste garante que os índices HNSW e GIN existem, porque sem eles a busca híbrida continua "funcionando", só que lenta: o tipo de defeito que não quebra teste nenhum e degrada o produto em silêncio.
+**Consequências.** (+) a classe inteira do problema fica coberta, não só as três ocorrências. (−) o teste depende do catálogo do Postgres (não roda em SQLite), o que é aceitável porque o alvo é Postgres.
+
+## ADR-037 — Diagnóstico com fonte única: `lumbra doctor`, System Health e wizard ✅
+
+**Contexto.** A plataforma só vira útil quando alguém consegue instalá-la e usá-la sem o autor por perto. Antes desta leva, subir o ambiente exigia conhecer `alembic`, `uvicorn`, `docker compose`, variáveis de ambiente e a ordem entre eles — e, quando algo falhava, a mensagem era um traceback.
+**Decisão.** Um módulo `diagnostics/checks.py` é a **fonte única** de verificações, consumida por três clientes: o comando `lumbra doctor`, o endpoint `/api/v1/system/health` e a página System Health. Três implementações separadas divergiriam, e a versão que o usuário vê discordaria da que o desenvolvedor depura. Regras que dão valor ao diagnóstico:
+
+* **Todo problema traz instrução de correção.** `WARN`/`FAIL` sem campo `fix` são bug — há teste que falha se aparecer um. Diagnóstico sem conserto apenas transfere o problema para quem menos sabe resolvê-lo.
+* **`WARN` não impede o uso.** Rodar sem Docker, sem Redis ou 100% local são escolhas legítimas, não pendências: viram avisos que explicam a limitação (ex.: "eventos se perdem ao reiniciar"). Só `FAIL` bloqueia.
+* **O diagnóstico nunca é a coisa que quebra.** Cada verificação roda isolada, com timeout de 30s; se explodir, vira `FAIL` com o erro em vez de derrubar o relatório — é justamente o comando que se roda quando tudo está quebrado.
+* **A página é pública, então não vaza segredo.** `/api/v1/system/health` responde sem autenticação (é o que se abre quando nem o login funciona) e por isso nunca inclui chave, DSN ou caminho absoluto — com teste que verifica.
+
+`lumbra up` (produção local) **recusa subir** com qualquer `FAIL`, enquanto `lumbra dev` apenas avisa: em produção, falhar cedo é melhor que servir errado; em desenvolvimento, interromper o fluxo por um Ollama ausente seria hostil. A CLI usa `argparse` e cores ANSI próprias em vez de `typer`/`rich`: uma dependência a menos para falhar exatamente no cenário de instalação limpa que o comando existe para consertar.
+**Consequências.** (+) instalação limpa validada de ponta a ponta (venv novo, `pip install -e .`, `lumbra doctor` funcionando); um único lugar para adicionar verificações; o wizard usa os mesmos endpoints públicos, então tudo que ele faz o usuário consegue repetir sozinho. (−) as verificações abrem conexões reais (banco, Redis, Ollama, embeddings) e o diagnóstico completo leva alguns segundos; a CLI precisa silenciar o `structlog` explicitamente, porque log de biblioteca atrapalha quem tenta ler um relatório.

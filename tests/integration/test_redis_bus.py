@@ -1,0 +1,147 @@
+"""Integração: RedisStreamsEventBus contra Redis real.
+
+Requer Redis em LUMBRA_REDIS__URL (padrão: localhost:6379).
+Execute com: pytest -m integration
+"""
+
+import asyncio
+import uuid
+
+import pytest
+from redis.asyncio import Redis
+
+from lumbra.adapters.eventbus.redis_streams import RedisStreamsEventBus
+from lumbra.domain.events import EventPayload, EventRegistry
+from lumbra.ports.event_bus import ConsumerSpec
+from lumbra.shared.config import RedisSettings
+
+pytestmark = pytest.mark.integration
+
+
+@pytest.fixture()
+def settings() -> RedisSettings:
+    # prefixo único por teste: isolamento total entre execuções
+    return RedisSettings(
+        stream_prefix=f"lumbra-test-{uuid.uuid4().hex[:8]}",
+        consumer_block_ms=200,
+        retry_min_idle_ms=200,
+        max_delivery_attempts=2,
+    )
+
+
+@pytest.fixture()
+async def redis(settings: RedisSettings):
+    client = Redis.from_url(settings.url.get_secret_value())
+    try:
+        await client.ping()
+    except Exception:
+        pytest.skip("Redis indisponível")
+    yield client
+    # limpeza das chaves do teste
+    keys = [k async for k in client.scan_iter(f"{settings.stream_prefix}:*")]
+    if keys:
+        await client.delete(*keys)
+    await client.aclose()
+
+
+@pytest.fixture()
+def reg() -> EventRegistry:
+    registry = EventRegistry()
+
+    @registry.event("chat.message_received")
+    class _Msg(EventPayload):
+        text: str
+
+    return registry
+
+
+def _msg(reg: EventRegistry, text: str):
+    cls = reg.payload_class("chat.message_received")
+    return reg.envelope(cls(text=text), producer="it")
+
+
+async def _wait_until(predicate, timeout: float = 5.0):
+    deadline = asyncio.get_event_loop().time() + timeout
+    while asyncio.get_event_loop().time() < deadline:
+        if predicate():
+            return True
+        await asyncio.sleep(0.05)
+    return False
+
+
+async def test_publish_consume_ack(redis, reg, settings):
+    seen = []
+
+    async def handler(event):
+        seen.append(event)
+
+    bus = RedisStreamsEventBus(redis, reg, settings)
+    bus.register(ConsumerSpec("it-consumer", ("chat.*",), handler))
+    await bus.start()
+    try:
+        event = _msg(reg, "olá integração")
+        await bus.publish(event)
+        assert await _wait_until(lambda: len(seen) == 1)
+        assert seen[0].event_id == event.event_id
+        assert seen[0].payload["text"] == "olá integração"
+    finally:
+        await bus.stop()
+
+
+async def test_duplicate_delivery_is_idempotent(redis, reg, settings):
+    seen = []
+
+    async def handler(event):
+        seen.append(event)
+
+    bus = RedisStreamsEventBus(redis, reg, settings)
+    bus.register(ConsumerSpec("it-consumer", ("chat.message_received",), handler))
+    await bus.start()
+    try:
+        event = _msg(reg, "x")
+        await bus.publish(event)
+        await bus.publish(event)  # mesmo event_id em duas mensagens
+        await asyncio.sleep(1.0)
+        assert len(seen) == 1
+    finally:
+        await bus.stop()
+
+
+async def test_retry_then_dlq_and_redrive(redis, reg, settings):
+    calls = {"n": 0}
+    healthy = {"on": False}
+
+    async def handler(event):
+        calls["n"] += 1
+        if not healthy["on"]:
+            raise RuntimeError("boom")
+
+    bus = RedisStreamsEventBus(redis, reg, settings)
+    bus.register(ConsumerSpec("it-consumer", ("chat.*",), handler))
+    await bus.start()
+    try:
+        event = _msg(reg, "vai falhar")
+        await bus.publish(event)
+
+        # max_delivery_attempts=2 → 2 falhas e DLQ
+        assert await _wait_until_async(
+            lambda: bus.dead_letters("it-consumer"), lambda v: len(v) == 1
+        )
+        assert calls["n"] == 2
+
+        # corrige o handler e faz redrive
+        healthy["on"] = True
+        assert await bus.redrive("it-consumer", event.event_id) is True
+        assert await _wait_until(lambda: calls["n"] >= 3, timeout=8.0)
+        assert await bus.dead_letters("it-consumer") == []
+    finally:
+        await bus.stop()
+
+
+async def _wait_until_async(coro_factory, check, timeout: float = 8.0):
+    deadline = asyncio.get_event_loop().time() + timeout
+    while asyncio.get_event_loop().time() < deadline:
+        if check(await coro_factory()):
+            return True
+        await asyncio.sleep(0.1)
+    return False
