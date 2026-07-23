@@ -25,3 +25,17 @@ def test_default_app_protects_skills_and_serves_auth():
         assert resp.status_code == 200
         names = {s["name"] for s in resp.json()["skills"]}
         assert {"system.list_capabilities", "context.gather"} <= names
+
+
+def test_eventbus_health_endpoint_is_public_and_shaped():
+    """A saúde do Event Bus (L2-3) é pública (sem segredo, só números) e traz
+    a forma esperada por consumidor."""
+    with TestClient(create_default_app()) as client:
+        resp = client.get("/api/v1/system/eventbus")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["kind"] in ("memory", "redis")
+        assert isinstance(body["consumers"], list)
+        for consumer in body["consumers"]:
+            assert {"consumer", "dispatcher", "backlog", "pending", "dead_letters"} <= set(consumer)
+            assert {"workers", "total_processed", "throughput_per_s"} <= set(consumer["dispatcher"])

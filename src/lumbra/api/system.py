@@ -8,6 +8,7 @@ apenas se cada peça responde e o que fazer quando não responde.
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Any
 
 from fastapi import APIRouter
@@ -66,6 +67,14 @@ def build_system_router(settings: Settings, kernel: LumbraKernel) -> APIRouter:
             "skills": len(kernel.skills.manifests()),
             "checks": [r.as_dict() for r in resultados],
         }
+
+    @router.get("/eventbus")
+    async def eventbus() -> dict[str, Any]:
+        """Saúde operacional do Event Bus (L2-3): por consumidor, throughput,
+        backlog, pendentes, DLQ e métricas por worker. Sem segredo — só
+        números — então pode ficar junto do resto da página pública."""
+        saude = await kernel.bus.health()
+        return asdict(saude)
 
     @router.get("", response_class=HTMLResponse)
     async def pagina() -> str:

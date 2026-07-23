@@ -5,8 +5,11 @@ Semântica garantida por qualquer implementação:
 * Entrega **at-least-once**: consumidores DEVEM ser idempotentes; as
   implementações deduplicam por ``(consumer, event_id)`` como defesa
   adicional, mas a garantia formal é at-least-once.
-* **Ordem por consumidor**: cada consumidor processa seus eventos em
-  série (um worker); paralelismo é entre consumidores.
+* **Ordem por chave de partição** (ADR-038): eventos com a mesma
+  ``partition_key`` são processados em ordem por um consumidor; chaves
+  diferentes rodam em paralelo, até ``consumer_concurrency`` workers. Sem
+  chave, a ordem não é garantida (o fallback é o ``event_id``, distribuído
+  livremente). Paralelismo também é entre consumidores.
 * **Retry com limite**: handler que levanta exceção é reentregue até
   ``max_attempts``; depois o evento vai para a **DLQ** do consumidor.
 * **Redrive**: eventos na DLQ podem ser reenfileirados após correção.
@@ -25,6 +28,7 @@ from datetime import datetime
 from uuid import UUID
 
 from lumbra.domain.events import DomainEvent
+from lumbra.shared.partitioning import DispatcherMetrics
 
 EventHandler = Callable[[DomainEvent], Awaitable[None]]
 
@@ -102,6 +106,28 @@ class DeadLetter:
     failed_at: datetime
 
 
+@dataclass(frozen=True)
+class ConsumerHealth:
+    """Saúde operacional de um consumidor (L2-3).
+
+    ``backlog`` = eventos já publicados mas ainda não entregues ao
+    consumidor (o *lag* do grupo). ``pending`` = entregues e ainda não
+    confirmados (em processamento ou presos por falha). Juntos dizem se o
+    consumidor está acompanhando a carga ou ficando para trás."""
+
+    consumer: str
+    dispatcher: DispatcherMetrics
+    backlog: int
+    pending: int
+    dead_letters: int
+
+
+@dataclass(frozen=True)
+class BusHealth:
+    kind: str  # "redis" | "memory"
+    consumers: tuple[ConsumerHealth, ...]
+
+
 class EventBusPort(ABC):
     """Contrato do Event Bus. Módulos dependem DESTE tipo, nunca de adapters."""
 
@@ -128,3 +154,8 @@ class EventBusPort(ABC):
     @abstractmethod
     async def redrive(self, consumer: str, event_id: UUID) -> bool:
         """Reenfileira um evento da DLQ. Retorna False se não encontrado."""
+
+    @abstractmethod
+    async def health(self) -> BusHealth:
+        """Instantâneo operacional: por consumidor, métricas de
+        processamento (dispatcher), backlog, pendentes e DLQ (L2-3)."""

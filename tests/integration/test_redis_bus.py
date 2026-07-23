@@ -212,6 +212,33 @@ async def test_recovery_after_worker_crash(redis, reg, settings):
         await bus.stop()
 
 
+async def test_health_reports_metrics_and_lag(redis, reg, settings):
+    """A saúde do bus reporta throughput, backlog/pendentes e DLQ (L2-3)."""
+    seen = []
+
+    async def handler(event):
+        seen.append(event)
+
+    bus = RedisStreamsEventBus(redis, reg, settings)
+    bus.register(ConsumerSpec("it-consumer", ("chat.*",), handler))
+    await bus.start()
+    try:
+        for i in range(5):
+            await bus.publish(_msg(reg, f"m{i}"))
+        assert await _wait_until(lambda: len(seen) == 5, timeout=10.0)
+
+        health = await bus.health()
+        assert health.kind == "redis"
+        (ch,) = health.consumers
+        assert ch.consumer == "it-consumer"
+        assert ch.dispatcher.total_processed == 5
+        assert ch.backlog == 0  # tudo entregue e consumido
+        assert ch.pending == 0  # tudo confirmado
+        assert ch.dead_letters == 0
+    finally:
+        await bus.stop()
+
+
 async def _wait_until_async(coro_factory, check, timeout: float = 8.0):
     deadline = asyncio.get_event_loop().time() + timeout
     while asyncio.get_event_loop().time() < deadline:

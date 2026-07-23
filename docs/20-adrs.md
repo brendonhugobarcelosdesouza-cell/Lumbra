@@ -268,3 +268,13 @@ Ambos os buses recebem o dispatcher, um por consumidor. O in-memory tem `concurr
 Mantivemos **XPENDING+XCLAIM** em vez de migrar para XAUTOCLAIM (uma chamada só): o XPENDING devolve `times_delivered` por mensagem, que é o contador que decide quando parar de reentregar e mandar para a DLQ. O XAUTOCLAIM não expõe esse contador — trocá-lo custaria a garantia de retry limitado. É um caso em que a API "mais nova" não serve ao requisito.
 
 **Consequências.** (+) o bus sobrevive a quedas de Redis sem martelar nem travar; a DLQ não vira vazamento de memória; a recuperação após crash deixou de ser suposição e virou teste. (−) a reentrega de `publish` pode gerar duplicatas (absorvidas pelo dedup); o backoff sem jitter seria inadequado num cluster multi-instância de alta escala — quando isso existir, adiciona-se jitter injetável.
+
+## ADR-040 — Observabilidade operacional do Event Bus (L2-3) ✅
+
+**Contexto.** Com concorrência (L2-1) e resiliência (L2-2) no lugar, faltava enxergar a saúde do bus: está acompanhando a carga ou ficando para trás? As métricas do dispatcher já eram coletadas desde o L2-1, mas viviam só na memória do processo.
+
+**Decisão.** Um método `health()` no `EventBusPort` devolve, por consumidor, um `ConsumerHealth`: as métricas do dispatcher (throughput, tempo de espera/processamento, eventos por worker, reprocessados), o **backlog** (eventos publicados ainda não entregues — o *lag* do grupo) e os **pendentes** (entregues sem ACK), mais o tamanho da DLQ. Backlog e pendentes são a leitura mais direta de "está atrasando": no Redis vêm do `XINFO GROUPS` (campos `lag` e `pending`), somados sobre os streams do consumidor; no in-memory, do estado das filas do dispatcher. Um endpoint público `/api/v1/system/eventbus` serializa o instantâneo — só números, nenhum segredo, então fica junto do resto da página de saúde, acessível mesmo quando o login não funciona.
+
+Escolhemos observabilidade **pull** (um instantâneo sob demanda) em vez de empurrar contadores para o `MetricsPort` a cada evento: é mais simples, não acopla o dispatcher (que mora em `shared/`, sem dependência de domínio) a um port de métricas, e o custo de calcular sob demanda é desprezível. Empurrar para o `MetricsPort` fica para quando houver um coletor externo (Prometheus) consumindo — aí o push passa a valer a pena.
+
+**Consequências.** (+) dá para responder "o bus está saudável sob carga?" com um GET, o que torna os testes de carga (L2-4) interpretáveis; a mesma forma serve aos dois buses. (−) é um instantâneo pull, não uma série temporal — tendências ao longo do tempo exigiriam um coletor externo; e `XINFO GROUPS` é uma chamada por stream do consumidor, aceitável para um endpoint de diagnóstico mas não para ser consultado em loop apertado.

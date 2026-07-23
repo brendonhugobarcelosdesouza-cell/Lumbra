@@ -21,7 +21,9 @@ from uuid import UUID
 from lumbra.domain.events import DomainEvent
 from lumbra.ports.event_bus import (
     BusAlreadyStartedError,
+    BusHealth,
     ConsumerAlreadyRegisteredError,
+    ConsumerHealth,
     ConsumerSpec,
     DeadLetter,
     EventBusPort,
@@ -93,6 +95,23 @@ class InMemoryEventBus(EventBusPort):
     def dispatcher_metrics(self, consumer: str) -> DispatcherMetrics:
         """Instantâneo de métricas do dispatcher do consumidor (L2-3)."""
         return self._dispatchers[consumer].metrics()
+
+    async def health(self) -> BusHealth:
+        consumidores = []
+        for name in self._consumers:
+            m = self._dispatchers[name].metrics()
+            consumidores.append(
+                ConsumerHealth(
+                    consumer=name,
+                    dispatcher=m,
+                    # in-memory não tem lag de grupo; o backlog é o que está
+                    # nas filas dos workers, e o "pending" é o que está em voo
+                    backlog=sum(w.queue_depth for w in m.per_worker),
+                    pending=m.inflight,
+                    dead_letters=len(self._dead[name]),
+                )
+            )
+        return BusHealth(kind="memory", consumers=tuple(consumidores))
 
     # ------------------------------------------------------------ publicação
 

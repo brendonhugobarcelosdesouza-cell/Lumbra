@@ -281,3 +281,41 @@ class TestConcurrency:
             assert m.workers == 4
         finally:
             await bus.stop()
+
+
+class TestHealth:
+    async def test_health_reporta_consumidores(self, reg_keyed):
+        bus = InMemoryEventBus(concurrency=4)
+        bus.register(ConsumerSpec("c", ("doc.*",), _noop))
+        await bus.start()
+        try:
+            for i in range(10):
+                await bus.publish(_stage(reg_keyed, f"d{i % 3}", i))
+            await bus.drain()
+            h = await bus.health()
+            assert h.kind == "memory"
+            assert len(h.consumers) == 1
+            ch = h.consumers[0]
+            assert ch.consumer == "c"
+            assert ch.dispatcher.total_processed == 10
+            assert ch.backlog == 0  # drenou
+            assert ch.pending == 0
+            assert ch.dead_letters == 0
+        finally:
+            await bus.stop()
+
+    async def test_health_conta_dlq(self, reg_keyed):
+        bus = InMemoryEventBus(concurrency=2, default_max_attempts=1)
+
+        async def sempre_falha(_e):
+            raise RuntimeError("boom")
+
+        bus.register(ConsumerSpec("c", ("doc.*",), sempre_falha))
+        await bus.start()
+        try:
+            await bus.publish(_stage(reg_keyed, "d", 1))
+            await bus.drain()
+            h = await bus.health()
+            assert h.consumers[0].dead_letters == 1
+        finally:
+            await bus.stop()

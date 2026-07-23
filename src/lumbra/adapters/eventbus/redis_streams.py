@@ -35,7 +35,9 @@ from redis.exceptions import TimeoutError as RedisTimeoutError
 from lumbra.domain.events import DomainEvent, EventRegistry
 from lumbra.ports.event_bus import (
     BusAlreadyStartedError,
+    BusHealth,
     ConsumerAlreadyRegisteredError,
+    ConsumerHealth,
     ConsumerSpec,
     DeadLetter,
     EventBusPort,
@@ -399,6 +401,48 @@ class RedisStreamsEventBus(EventBusPort):
             return True
         return False
 
+    # ------------------------------------------------------------ saúde (L2-3)
+
+    async def health(self) -> BusHealth:
+        consumers: list[ConsumerHealth] = []
+        for name in self._consumers:
+            dispatcher = self._dispatchers.get(name)
+            metrics = (
+                dispatcher.metrics()
+                if dispatcher
+                else _zero_metrics(f"redis:{name}", self._settings.consumer_concurrency)
+            )
+            backlog, pending = await self._group_lag(name)
+            dlq_len = int(await self._redis.xlen(self._dlq_key(name)))
+            consumers.append(
+                ConsumerHealth(
+                    consumer=name,
+                    dispatcher=metrics,
+                    backlog=backlog,
+                    pending=pending,
+                    dead_letters=dlq_len,
+                )
+            )
+        return BusHealth(kind="redis", consumers=tuple(consumers))
+
+    async def _group_lag(self, consumer: str) -> tuple[int, int]:
+        """Lag (não entregues) e pendentes (entregues sem ACK) somados sobre
+        os streams do consumidor, via XINFO GROUPS."""
+        backlog = pending = 0
+        for stream in self._streams_by_consumer.get(consumer, []):
+            try:
+                groups = await self._redis.xinfo_groups(stream)
+            except ResponseError:
+                continue  # stream ainda não existe
+            for group in groups:
+                if _as_str(_group_field(group, "name")) != consumer:
+                    continue
+                lag = _group_field(group, "lag")
+                backlog += int(lag) if lag is not None else 0
+                pend = _group_field(group, "pending")
+                pending += int(pend) if pend is not None else 0
+        return backlog, pending
+
 
 def _read_response(raw: Any) -> list[tuple[str, list[tuple[bytes | str, dict[Any, Any]]]]]:
     """Normaliza a resposta de XREADGROUP (tipagem do redis-py admite unions amplas)."""
@@ -428,6 +472,30 @@ def _field(fields: dict[Any, Any], name: str) -> str:
     if value is None:
         raise ValueError(f"campo ausente na entrada da DLQ: {name}")
     return _as_str(value)
+
+
+def _group_field(group: dict[Any, Any], name: str) -> Any:
+    """Lê um campo do XINFO GROUPS tolerando chave em bytes ou str."""
+    if name in group:
+        return group[name]
+    return group.get(name.encode())
+
+
+def _zero_metrics(name: str, workers: int) -> DispatcherMetrics:
+    """Métricas zeradas quando o consumidor ainda não iniciou (health antes
+    do start)."""
+    return DispatcherMetrics(
+        name=name,
+        workers=workers,
+        total_processed=0,
+        total_failed=0,
+        total_reprocessed=0,
+        inflight=0,
+        avg_wait_ms=0.0,
+        avg_processing_ms=0.0,
+        throughput_per_s=0.0,
+        per_worker=(),
+    )
 
 
 # fim do módulo — canário anti-truncamento
