@@ -38,15 +38,26 @@ class FileDetected(EventPayload):
     uri: str
     root: str  # raiz da fonte, para releitura do conteúdo
 
+    def partition_key(self) -> str:
+        # ordem por documento: os estágios do pipeline de um mesmo documento
+        # precisam ser processados em sequência (L2-1)
+        return f"document:{self.document_id}"
+
 
 class DocumentIndexed(EventPayload):
     document_id: str
     chunks: int
 
+    def partition_key(self) -> str:
+        return f"document:{self.document_id}"
+
 
 class IndexingFailed(EventPayload):
     document_id: str
     stage_error: str
+
+    def partition_key(self) -> str:
+        return f"document:{self.document_id}"
 
 
 def register_indexing_events(registry: EventRegistry) -> None:

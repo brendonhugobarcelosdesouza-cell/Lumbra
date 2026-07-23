@@ -36,6 +36,7 @@ from lumbra.ports.event_bus import (
 )
 from lumbra.shared.config import RedisSettings
 from lumbra.shared.logging import get_logger
+from lumbra.shared.partitioning import DispatcherMetrics, PartitionedDispatcher
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -59,6 +60,9 @@ class RedisStreamsEventBus(EventBusPort):
         self._settings = settings
         self._consumers: dict[str, ConsumerSpec] = {}
         self._streams_by_consumer: dict[str, list[str]] = {}
+        # um dispatcher por consumidor: paraleliza o processamento por chave
+        # de partição, preservando a ordem dentro de cada entidade (L2-1)
+        self._dispatchers: dict[str, PartitionedDispatcher] = {}
         self._workers: list[asyncio.Task[None]] = []
         self._started = False
         self._stopping = asyncio.Event()
@@ -108,15 +112,28 @@ class RedisStreamsEventBus(EventBusPort):
             self._streams_by_consumer[spec.name] = streams
             for stream in streams:
                 await self._ensure_group(stream, spec.name)
+            dispatcher = PartitionedDispatcher(
+                workers=self._settings.consumer_concurrency, name=f"redis:{spec.name}"
+            )
+            await dispatcher.start()
+            self._dispatchers[spec.name] = dispatcher
             self._workers.append(asyncio.create_task(self._consume_loop(spec)))
 
     async def stop(self) -> None:
         if not self._started:
             return
         self._stopping.set()
+        # 1) o leitor para de submeter; 2) drena o que já foi lido; 3) encerra
         await asyncio.gather(*self._workers, return_exceptions=True)
         self._workers.clear()
+        for dispatcher in self._dispatchers.values():
+            await dispatcher.stop(drain=True)
+        self._dispatchers.clear()
         self._started = False
+
+    def dispatcher_metrics(self, consumer: str) -> DispatcherMetrics:
+        """Instantâneo de métricas do dispatcher do consumidor (L2-3)."""
+        return self._dispatchers[consumer].metrics()
 
     async def _ensure_group(self, stream: str, group: str) -> None:
         try:
@@ -153,7 +170,7 @@ class RedisStreamsEventBus(EventBusPort):
                 )
                 for stream_name, messages in _read_response(response):
                     for message_id, fields in messages:
-                        await self._handle(spec, stream_name, message_id, fields, 1)
+                        await self._submit(spec, stream_name, message_id, fields, 1)
                 await self._reclaim_pending(spec)
             except asyncio.CancelledError:  # pragma: no cover
                 raise
@@ -161,7 +178,7 @@ class RedisStreamsEventBus(EventBusPort):
                 _log.error("consume_loop_error", consumer=spec.name, error=repr(exc))
                 await asyncio.sleep(0.5)
 
-    async def _handle(
+    async def _submit(
         self,
         spec: ConsumerSpec,
         stream: str,
@@ -169,11 +186,29 @@ class RedisStreamsEventBus(EventBusPort):
         fields: dict[Any, Any],
         delivery_count: int,
     ) -> None:
+        """Roteia a mensagem para o dispatcher pela chave de partição do
+        evento — mesma entidade no mesmo worker (ordem), entidades
+        diferentes em paralelo. A submissão espera se o worker estiver
+        afogado (backpressure), segurando a leitura do stream."""
         raw = fields.get(_ENVELOPE_FIELD) or fields.get("envelope")
         if raw is None:  # mensagem estranha: ACK e segue
             await self._redis.xack(stream, spec.name, message_id)
             return
         event = DomainEvent.model_validate_json(raw)
+        await self._dispatchers[spec.name].submit(
+            event.routing_key,
+            lambda: self._process(spec, stream, message_id, event, delivery_count),
+            reprocess=delivery_count > 1,
+        )
+
+    async def _process(
+        self,
+        spec: ConsumerSpec,
+        stream: str,
+        message_id: bytes | str,
+        event: DomainEvent,
+        delivery_count: int,
+    ) -> None:
         max_attempts = spec.max_attempts or self._settings.max_delivery_attempts
 
         dedup_key = self._dedup_key(spec.name, event.event_id)
@@ -202,7 +237,10 @@ class RedisStreamsEventBus(EventBusPort):
             await self._redis.xack(stream, spec.name, message_id)
 
     async def _reclaim_pending(self, spec: ConsumerSpec) -> None:
-        """Reprocessa mensagens pendentes (falhas ou consumidores mortos)."""
+        """Reprocessa mensagens pendentes (falhas ou consumidores mortos).
+
+        As reclamadas voltam pelo MESMO dispatcher, roteadas pela chave —
+        preservam a ordem por entidade também na reentrega."""
         for stream in self._streams_by_consumer[spec.name]:
             pending: Sequence[dict[str, Any]] = await self._redis.xpending_range(
                 stream,
@@ -223,7 +261,7 @@ class RedisStreamsEventBus(EventBusPort):
                 )
                 # XCLAIM incrementa o contador: a entrega corrente é times_delivered + 1
                 for claimed_id, fields in _entries(claimed):
-                    await self._handle(
+                    await self._submit(
                         spec, stream, claimed_id, fields, int(entry["times_delivered"]) + 1
                     )
 

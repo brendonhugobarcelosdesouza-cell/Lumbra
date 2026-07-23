@@ -79,6 +79,9 @@ class ReflectionCompleted(EventPayload):
     stored: int
     skipped_duplicates: int
 
+    def partition_key(self) -> str:
+        return f"conversation:{self.conversation_id}"
+
 
 def register_reflection_events(registry: EventRegistry) -> None:
     if ("reflection.completed", 1) not in registry.known_types():

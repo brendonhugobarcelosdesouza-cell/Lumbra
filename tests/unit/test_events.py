@@ -90,6 +90,63 @@ class TestEnvelope:
         assert effect.causation_id == cause.event_id
         assert effect.event_id != cause.event_id
 
+
+class TestPartitionKey:
+    """Chave de particionamento (L2-1): vem do payload, com fallback."""
+
+    def test_payload_sem_entidade_nao_tem_chave(self, reg, message_received):
+        # o payload de teste não sobrescreve partition_key -> None
+        evt = reg.envelope(message_received(conversation_id="c1", text="x"), producer="t")
+        assert evt.partition_key is None
+
+    def test_routing_key_cai_para_event_id_sem_chave(self, reg, message_received):
+        evt = reg.envelope(message_received(conversation_id="c1", text="x"), producer="t")
+        assert evt.routing_key == str(evt.event_id)
+
+    def test_payload_com_entidade_define_a_chave(self, reg):
+        @reg.event("doc.detected")
+        class DocDetected(EventPayload):
+            document_id: str
+
+            def partition_key(self) -> str:
+                return f"document:{self.document_id}"
+
+        evt = reg.envelope(DocDetected(document_id="abc"), producer="t")
+        assert evt.partition_key == "document:abc"
+        assert evt.routing_key == "document:abc"
+
+    def test_chave_sobrevive_a_serializacao(self, reg):
+        """O consumidor (Redis) lê a chave do envelope serializado, sem
+        redecodificar o payload tipado."""
+
+        @reg.event("doc.indexed")
+        class DocIndexed(EventPayload):
+            document_id: str
+
+            def partition_key(self) -> str:
+                return f"document:{self.document_id}"
+
+        evt = reg.envelope(DocIndexed(document_id="xyz"), producer="t")
+        redecodificado = DomainEvent.model_validate_json(evt.model_dump_json())
+        assert redecodificado.partition_key == "document:xyz"
+        assert redecodificado.routing_key == "document:xyz"
+
+    def test_mesma_entidade_mesma_chave_ordem_garantida(self, reg):
+        """Dois eventos do mesmo documento compartilham a chave -> mesma
+        partição -> ordem preservada."""
+
+        @reg.event("doc.step")
+        class DocStep(EventPayload):
+            document_id: str
+            step: int
+
+            def partition_key(self) -> str:
+                return f"document:{self.document_id}"
+
+        e1 = reg.envelope(DocStep(document_id="d", step=1), producer="t")
+        e2 = reg.envelope(DocStep(document_id="d", step=2), producer="t")
+        assert e1.routing_key == e2.routing_key
+
     def test_invalid_type_name_in_raw_envelope(self):
         with pytest.raises(ValidationError):
             DomainEvent(type="Bad Name", schema_version=1, producer="t", payload={})

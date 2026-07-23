@@ -79,6 +79,9 @@ QUANDO HÁ VÁRIOS VALORES POSSÍVEIS:
 class ConversationStarted(EventPayload):
     conversation_id: str
 
+    def partition_key(self) -> str:
+        return f"conversation:{self.conversation_id}"
+
 
 class AttachmentIngested(EventPayload):
     conversation_id: str
@@ -86,12 +89,18 @@ class AttachmentIngested(EventPayload):
     state: str
     chunks: int
 
+    def partition_key(self) -> str:
+        return f"conversation:{self.conversation_id}"
+
 
 class MessageAnswered(EventPayload):
     conversation_id: str
     message_id: str
     provider: str
     citations: int
+
+    def partition_key(self) -> str:
+        return f"conversation:{self.conversation_id}"
 
 
 def register_chat_events(registry: EventRegistry) -> None:

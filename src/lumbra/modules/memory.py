@@ -57,9 +57,15 @@ class MemoryRemembered(EventPayload):
     memory_id: str
     kind: str
 
+    def partition_key(self) -> str:
+        return f"memory:{self.memory_id}"
+
 
 class MemoryForgotten(EventPayload):
     memory_id: str
+
+    def partition_key(self) -> str:
+        return f"memory:{self.memory_id}"
 
 
 class MemoryConsolidated(EventPayload):

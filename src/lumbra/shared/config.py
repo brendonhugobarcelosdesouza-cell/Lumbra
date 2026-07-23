@@ -35,6 +35,7 @@ class RedisSettings(BaseModel):
     url: SecretStr = SecretStr("redis://localhost:6379/0")
     stream_prefix: str = "lumbra"
     consumer_block_ms: int = Field(default=5_000, ge=100)
+    consumer_concurrency: int = Field(default=4, ge=1)  # workers por consumidor (L2-1)
     max_delivery_attempts: int = Field(default=5, ge=1)
     retry_min_idle_ms: int = Field(default=30_000, ge=100)  # reentrega após este idle
     dedup_ttl_seconds: int = Field(default=86_400, ge=60)  # janela de idempotência

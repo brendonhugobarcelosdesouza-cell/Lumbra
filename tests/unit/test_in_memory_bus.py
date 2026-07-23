@@ -1,5 +1,7 @@
 """Testes do InMemoryEventBus: entrega, ordem, retry, DLQ, idempotência, redrive."""
 
+import asyncio
+
 import pytest
 
 from lumbra.adapters.eventbus.in_memory import InMemoryEventBus
@@ -174,3 +176,108 @@ async def _collect(sink: list, event) -> None:
 
 async def _noop(_event) -> None:
     return None
+
+
+# ---------------------------------------------------------------- concorrência (L2-1)
+
+
+@pytest.fixture()
+def reg_keyed() -> EventRegistry:
+    """Registro com um evento que declara partition_key (por entidade)."""
+    registry = EventRegistry()
+
+    @registry.event("doc.stage")
+    class _Stage(EventPayload):
+        document_id: str
+        step: int
+
+        def partition_key(self) -> str:
+            return f"document:{self.document_id}"
+
+    return registry
+
+
+def _stage(reg: EventRegistry, document_id: str, step: int):
+    cls = reg.payload_class("doc.stage")
+    return reg.envelope(cls(document_id=document_id, step=step), producer="test")
+
+
+class TestConcurrency:
+    async def test_ordem_por_entidade_preservada_com_paralelismo(self, reg_keyed):
+        """Com vários workers, cada documento mantém a ordem dos seus passos."""
+        bus = InMemoryEventBus(concurrency=8)
+        vistos: dict[str, list[int]] = {"A": [], "B": [], "C": []}
+
+        async def handler(event) -> None:
+            await asyncio.sleep(0.001)  # jitter para expor corrida
+            vistos[event.payload["document_id"]].append(event.payload["step"])
+
+        bus.register(ConsumerSpec("c", ("doc.*",), handler))
+        await bus.start()
+        try:
+            for step in range(30):
+                for doc in vistos:
+                    await bus.publish(_stage(reg_keyed, doc, step))
+            await bus.drain()
+        finally:
+            await bus.stop()
+        for doc, passos in vistos.items():
+            assert passos == list(range(30)), f"ordem quebrada em {doc}"
+
+    async def test_entidades_diferentes_em_paralelo(self, reg_keyed):
+        """Documentos distintos não se bloqueiam entre si."""
+        bus = InMemoryEventBus(concurrency=16)
+        barreira = asyncio.Event()
+        chegaram = 0
+
+        async def handler(_event) -> None:
+            nonlocal chegaram
+            chegaram += 1
+            await asyncio.wait_for(barreira.wait(), timeout=2.0)
+
+        bus.register(ConsumerSpec("c", ("doc.*",), handler))
+        await bus.start()
+        try:
+            for i in range(10):
+                await bus.publish(_stage(reg_keyed, f"doc-{i}", 0))
+            await asyncio.sleep(0.1)
+            assert chegaram == 10, "documentos não rodaram em paralelo"
+            barreira.set()
+            await bus.drain()
+        finally:
+            await bus.stop()
+
+    async def test_dedup_sob_concorrencia(self, reg_keyed):
+        """O mesmo evento, publicado duas vezes, processa uma só vez mesmo
+        com vários workers (a chave garante o mesmo worker)."""
+        bus = InMemoryEventBus(concurrency=8)
+        contagem = 0
+
+        async def handler(_event) -> None:
+            nonlocal contagem
+            contagem += 1
+
+        bus.register(ConsumerSpec("c", ("doc.*",), handler))
+        await bus.start()
+        try:
+            evento = _stage(reg_keyed, "X", 1)
+            await bus.publish(evento)
+            await bus.publish(evento)  # mesmo event_id
+            await bus.drain()
+        finally:
+            await bus.stop()
+        assert contagem == 1
+
+    async def test_metricas_expostas(self, reg_keyed):
+        bus = InMemoryEventBus(concurrency=4)
+        bus.register(ConsumerSpec("c", ("doc.*",), _noop))
+        await bus.start()
+        try:
+            for i in range(20):
+                await bus.publish(_stage(reg_keyed, f"d{i % 5}", i))
+            await bus.drain()
+            m = bus.dispatcher_metrics("c")
+            assert m.total_processed == 20
+            assert m.workers == 4
+        finally:
+            await bus.stop()

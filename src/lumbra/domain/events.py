@@ -68,6 +68,21 @@ class EventPayload(BaseModel):
     event_type: ClassVar[str]
     schema_version: ClassVar[int]
 
+    def partition_key(self) -> str | None:
+        """Chave de particionamento do evento (L2-1).
+
+        Eventos da MESMA chave são processados em ordem; chaves diferentes,
+        em paralelo. Cada payload que representa uma entidade sobrescreve
+        este método para devolver o identificador dela (``document_id``,
+        ``memory_id``, ``conversation_id``, ``user_id``...). O Event Bus
+        NUNCA conhece esses campos: quem define a chave é o payload, então
+        novos tipos de entidade não exigem mudança no bus.
+
+        O padrão é ``None`` — eventos sem entidade não têm ordem a preservar
+        e são distribuídos livremente entre os workers (ver ``routing_key``
+        no envelope, que cai para o ``event_id`` nesse caso)."""
+        return None
+
 
 def _utcnow() -> datetime:
     return datetime.now(tz=UTC)
@@ -87,6 +102,10 @@ class DomainEvent(BaseModel):
     causation_id: UUID | None = None
     producer: str
     payload: dict[str, Any]
+    # chave de particionamento resolvida do payload na criação do envelope
+    # (ver EventPayload.partition_key). Viaja no envelope serializado, então
+    # o consumidor a lê sem redecodificar o payload tipado.
+    partition_key: str | None = None
 
     @field_validator("type")
     @classmethod
@@ -99,6 +118,14 @@ class DomainEvent(BaseModel):
     def context(self) -> str:
         """Bounded context produtor — prefixo antes do ponto."""
         return self.type.split(".", 1)[0]
+
+    @property
+    def routing_key(self) -> str:
+        """Chave para o despacho particionado, com o fallback documentado:
+        na ausência de ``partition_key`` (evento sem entidade), usa o
+        ``event_id`` — cada evento vira sua própria partição, sem ordem a
+        garantir e com paralelismo máximo."""
+        return self.partition_key or str(self.event_id)
 
     def follows(self, cause: DomainEvent) -> DomainEvent:
         """Deriva um envelope encadeado: herda correlação, aponta causação."""
@@ -170,6 +197,7 @@ class EventRegistry:
             causation_id=causation_id,
             producer=producer,
             payload=payload.model_dump(mode="json"),
+            partition_key=payload.partition_key(),
             **extra,
         )
 

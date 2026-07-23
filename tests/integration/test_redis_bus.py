@@ -52,12 +52,25 @@ def reg() -> EventRegistry:
     class _Msg(EventPayload):
         text: str
 
+    @registry.event("doc.stage")
+    class _Stage(EventPayload):
+        document_id: str
+        step: int
+
+        def partition_key(self) -> str:
+            return f"document:{self.document_id}"
+
     return registry
 
 
 def _msg(reg: EventRegistry, text: str):
     cls = reg.payload_class("chat.message_received")
     return reg.envelope(cls(text=text), producer="it")
+
+
+def _stage(reg: EventRegistry, document_id: str, step: int):
+    cls = reg.payload_class("doc.stage")
+    return reg.envelope(cls(document_id=document_id, step=step), producer="it")
 
 
 async def _wait_until(predicate, timeout: float = 5.0):
@@ -134,6 +147,32 @@ async def test_retry_then_dlq_and_redrive(redis, reg, settings):
         assert await bus.redrive("it-consumer", event.event_id) is True
         assert await _wait_until(lambda: calls["n"] >= 3, timeout=8.0)
         assert await bus.dead_letters("it-consumer") == []
+    finally:
+        await bus.stop()
+
+
+async def test_partitioned_order_preserved_under_concurrency(redis, reg, settings):
+    """Com concorrência>1, os passos de um MESMO documento chegam em ordem;
+    documentos distintos podem ser processados em paralelo (L2-1)."""
+    settings = settings.model_copy(update={"consumer_concurrency": 8})
+    vistos: dict[str, list[int]] = {"A": [], "B": [], "C": []}
+
+    async def handler(event):
+        await asyncio.sleep(0.002)  # jitter para expor corrida de ordem
+        vistos[event.payload["document_id"]].append(event.payload["step"])
+
+    bus = RedisStreamsEventBus(redis, reg, settings)
+    bus.register(ConsumerSpec("it-consumer", ("doc.*",), handler))
+    await bus.start()
+    try:
+        for step in range(20):
+            for doc in vistos:
+                await bus.publish(_stage(reg, doc, step))
+        assert await _wait_until(lambda: sum(len(v) for v in vistos.values()) == 60, timeout=15.0)
+        for doc, passos in vistos.items():
+            assert passos == list(range(20)), f"ordem quebrada em {doc}"
+        # o dispatcher realmente distribuiu entre workers
+        assert bus.dispatcher_metrics("it-consumer").total_processed == 60
     finally:
         await bus.stop()
 
