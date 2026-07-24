@@ -199,6 +199,20 @@ os termos. Toda a recuperação hoje depende só do vetorial; ressuscitar o
 léxico daria um reforço grande a buscas por termo exato (valores, nomes,
 datas). Prioridade: alta — Leva 2.
 
+### 📋 #12 — Superfície da API depende do adaptador de persistência
+
+**Sintoma (achado no P1-a):** os routers de chat e memória (e o Developer
+Console) só são montados quando `persistence=postgres` — um Nó em modo
+memória simplesmente não tem `/api/v1/chat` nem `/api/v1/memory`.
+**Por que é defeito:** viola a Regra 1 da plataforma (docs/24): o contrato
+é a única porta, e um cliente contra um Nó em modo memória veria uma API
+diferente. O contrato (contracts/platform-api-v1.json) foi gerado na
+configuração completa justamente para não consagrar a superfície mutilada.
+**Correção proposta:** routers sempre montados; quando o store subjacente
+não existe, a rota responde 501/503 com mensagem estilo doctor. Entra no
+P1-b (que já mexe na composição do app para o modelo de dispositivos).
+**Estado:** aberto, priorizado para P1-b.
+
 ### ✅ #11 — Guardrail contra chute em valores ambíguos (segurança)
 Achado mais importante da saga da fatura, e não é sobre a fatura: ao
 melhorar a recuperação, o Claude passou de honesto ("não sei o total") para
