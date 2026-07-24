@@ -99,7 +99,7 @@ def main() -> int:
             resultados.append((nome, leg))
             linha = f"{nome:<22} {leg:>7.3f}  {amostra(texto)}"
             print(linha.encode("ascii", "replace").decode("ascii"))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             print(f"{nome:<22} {'ERRO':>7}  {type(exc).__name__}: {exc}")
 
     if resultados:

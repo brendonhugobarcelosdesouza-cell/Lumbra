@@ -86,6 +86,8 @@ ignore = [
 # numa CLI, stdout É a interface: print é a saída correta, não um resquício
 # de depuração. S603/S607 idem: os subprocessos são fixos (docker/alembic).
 "src/lumbra/cli/*" = ["T201", "S603", "S607"]
+# scripts de diagnóstico de linha de comando: print é a saída pretendida.
+"scripts/*.py" = ["T201"]
 
 # ---------------------------------------------------------------- mypy
 [tool.mypy]
