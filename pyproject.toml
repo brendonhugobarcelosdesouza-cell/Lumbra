@@ -80,6 +80,7 @@ ignore = [
 "tests/**" = ["S101", "ANN", "S105", "S106"]  # assert e senhas fictícias em testes
 # medição de performance imprime números para comparação humana (roda com -s)
 "tests/integration/test_perf_baseline.py" = ["T201"]
+"tests/integration/test_eventbus_load.py" = ["T201"]  # baseline imprime numeros
 "src/lumbra/api/console_ui.py" = ["E501"]  # HTML/JS inline do Developer Console
 "src/lumbra/api/system.py" = ["E501"]  # HTML/JS inline da página System Health
 # numa CLI, stdout É a interface: print é a saída correta, não um resquício

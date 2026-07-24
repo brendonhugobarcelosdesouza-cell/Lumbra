@@ -239,6 +239,36 @@ async def test_health_reports_metrics_and_lag(redis, reg, settings):
         await bus.stop()
 
 
+async def test_load_throughput_redis(redis, reg, settings):
+    """Carga no Redis real: mede throughput ponta a ponta e confirma que a
+    saúde reporta backlog zerado ao fim (L2-4). Instrumento, não gate."""
+    settings = settings.model_copy(update={"consumer_concurrency": 8})
+    processados = 0
+
+    async def handler(_event):
+        nonlocal processados
+        processados += 1
+
+    bus = RedisStreamsEventBus(redis, reg, settings)
+    bus.register(ConsumerSpec("it-consumer", ("doc.*",), handler))
+    await bus.start()
+    total = 2_000
+    try:
+        inicio = asyncio.get_event_loop().time()
+        for i in range(total):
+            await bus.publish(_stage(reg, f"d{i % 200}", i))
+        assert await _wait_until(lambda: processados == total, timeout=30.0)
+        elapsed = asyncio.get_event_loop().time() - inicio
+        health = await bus.health()
+        print(  # noqa: T201 - baseline imprime numeros
+            f"\nbus Redis (8 workers): {total} eventos em {elapsed * 1000:.0f}ms "
+            f"-> {total / elapsed:,.0f} ev/s | backlog {health.consumers[0].backlog}"
+        )
+        assert health.consumers[0].backlog == 0
+    finally:
+        await bus.stop()
+
+
 async def _wait_until_async(coro_factory, check, timeout: float = 8.0):
     deadline = asyncio.get_event_loop().time() + timeout
     while asyncio.get_event_loop().time() < deadline:

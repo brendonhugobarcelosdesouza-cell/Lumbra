@@ -278,3 +278,13 @@ Mantivemos **XPENDING+XCLAIM** em vez de migrar para XAUTOCLAIM (uma chamada só
 Escolhemos observabilidade **pull** (um instantâneo sob demanda) em vez de empurrar contadores para o `MetricsPort` a cada evento: é mais simples, não acopla o dispatcher (que mora em `shared/`, sem dependência de domínio) a um port de métricas, e o custo de calcular sob demanda é desprezível. Empurrar para o `MetricsPort` fica para quando houver um coletor externo (Prometheus) consumindo — aí o push passa a valer a pena.
 
 **Consequências.** (+) dá para responder "o bus está saudável sob carga?" com um GET, o que torna os testes de carga (L2-4) interpretáveis; a mesma forma serve aos dois buses. (−) é um instantâneo pull, não uma série temporal — tendências ao longo do tempo exigiriam um coletor externo; e `XINFO GROUPS` é uma chamada por stream do consumidor, aceitável para um endpoint de diagnóstico mas não para ser consultado em loop apertado.
+
+## ADR-041 — Carga e baseline do Event Bus como instrumento (L2-4) ✅
+
+**Contexto.** Depois de concorrência (L2-1), resiliência (L2-2) e observabilidade (L2-3), faltava medir: o bus aguenta carga? A concorrência realmente paraleliza? Sem número, "aguenta" é opinião.
+
+**Decisão.** Testes de carga como **instrumento**, não como gate rígido — no espírito do `test_perf_baseline.py` da memória: rodam com `-s`, imprimem throughput e latência para comparar antes/depois, e as asserções são travas de sanidade largas (a máquina do CI varia), não metas. Miram o dispatcher e o bus in-memory, que são os caminhos de throughput e rodam em qualquer lugar sem Redis; a carga no Redis real fica junto dos demais testes de integração (pula sem Redis). O teste-chave mede o mesmo trabalho de 1ms de I/O com 1, 2, 4 e 8 workers: se o tempo total cai com mais workers, o paralelismo por chave está real. E cai — medido em dev: 800 eventos passaram de 909ms (1 worker) para 125ms (8 workers), ~7×. O throughput bruto do despacho fica na ordem de 500k eventos/s; o bus in-memory ponta a ponta, na ordem de 50k/s com latência mediana de ~4ms.
+
+O baseline vive no docstring do arquivo (referência, não contrato): quem otimizar o bus roda o mesmo teste e compara. Registrar como número fixo de CI seria frágil (varia por máquina) e daria falsa precisão.
+
+**Consequências.** (+) a promessa do L2-1 deixou de ser afirmação e virou medida reproduzível; qualquer regressão de throughput fica visível ao rodar o instrumento; o baseline documenta a ordem de grandeza esperada. (−) não é um gate automático — uma regressão de desempenho não quebra o CI sozinha, depende de alguém rodar e comparar; medir sob carga real de produção (rede, disco, contenção) exigiria um ambiente dedicado, fora do escopo de um teste.
