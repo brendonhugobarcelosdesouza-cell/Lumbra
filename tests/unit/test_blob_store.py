@@ -8,6 +8,21 @@ import pytest
 from lumbra.adapters.attachments.filesystem import FilesystemBlobStore, _sanitize
 
 
+class TestConstrucaoSemEfeito:
+    def test_construir_nao_cria_diretorio(self, tmp_path):
+        """Instanciar um adapter não pode ter efeito no filesystem: o Nó sobe
+        em modo memória e não deve escrever em disco no boot (regressão do
+        crash do container no P1-b.1)."""
+        raiz = tmp_path / "nao-deve-existir"
+        FilesystemBlobStore(raiz)
+        assert not raiz.exists()
+
+    async def test_save_cria_diretorio_sob_demanda(self, tmp_path):
+        store = FilesystemBlobStore(tmp_path / "blobs")
+        uri = await store.save(b"conteudo", filename="a.txt", owner=uuid4())
+        assert (await store.read(uri)) == b"conteudo"
+
+
 class TestSanitizacao:
     @pytest.mark.parametrize(
         ("entrada", "esperado_nao_contem"),

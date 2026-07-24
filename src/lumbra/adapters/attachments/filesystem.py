@@ -24,8 +24,11 @@ def _sanitize(filename: str) -> str:
 
 class FilesystemBlobStore(BlobStorePort):
     def __init__(self, root: Path) -> None:
+        # Construção SEM efeito colateral: não criamos o diretório aqui. Um
+        # adapter deve poder ser instanciado sem exigir filesystem gravável
+        # (o container roda em modo memória e não deve escrever em disco no
+        # boot). O diretório é criado sob demanda em save() (parents=True).
         self._root = root
-        self._root.mkdir(parents=True, exist_ok=True)
 
     async def save(self, data: bytes, *, filename: str, owner: UUID) -> str:
         destino = self._root / str(owner)
