@@ -1,8 +1,13 @@
 # 24 — Lumbra Platform: visão oficial e arquitetura
 
 > Documento constitucional. Redefine o que a Lumbra É a partir de 2026-07-24.
-> Decisões técnicas justificadas nos ADRs 042–046 (`docs/20-adrs.md`).
+> Decisões técnicas justificadas nos ADRs 042–047 (`docs/20-adrs.md`).
 > Roadmap derivado desta visão em `docs/13-roadmap.md`.
+>
+> **Status: FUNDAÇÃO APROVADA (2026-07-24).** As decisões deste documento e
+> dos ADRs 042–046 são a base arquitetural da plataforma para os próximos
+> anos. Revogá-las ou contorná-las exige novo ADR que cite explicitamente o
+> que substitui e por quê — nunca erosão silenciosa.
 
 ## A visão
 
@@ -209,6 +214,18 @@ lumbra/
 A movimentação física de `src/` → `core/` acontece no épico P1 (junto do
 ajuste de CI), não antes — reorganização sem entregável associado é
 exatamente o tipo de trabalho que o princípio 8 proíbe.
+
+## Regras de fundação (invioláveis sem ADR)
+
+1. **Todo cliente consome exclusivamente a Platform API.** Nenhum cliente —
+   Desktop, Android, iOS, Web, script, automação — lê o banco, os arquivos,
+   as filas ou qualquer estado interno do Nó diretamente. Se uma interface
+   precisa de um dado que a API não expõe, a resposta é evoluir o contrato,
+   jamais abrir um atalho. O contrato OpenAPI é a única porta.
+2. **Integrações entram por extensão, nunca por alteração do Core.**
+   Plugins são processos externos que consomem a mesma Platform API dos
+   clientes, com credenciais de escopo limitado (ADR-047). O Core não
+   carrega código de terceiros dentro do próprio processo.
 
 ## Riscos assumidos (registro honesto)
 
