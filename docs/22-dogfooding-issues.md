@@ -199,7 +199,7 @@ os termos. Toda a recuperação hoje depende só do vetorial; ressuscitar o
 léxico daria um reforço grande a buscas por termo exato (valores, nomes,
 datas). Prioridade: alta — Leva 2.
 
-### 📋 #12 — Superfície da API depende do adaptador de persistência
+### ✅ #12 — Superfície da API depende do adaptador de persistência
 
 **Sintoma (achado no P1-a):** os routers de chat e memória (e o Developer
 Console) só são montados quando `persistence=postgres` — um Nó em modo
@@ -211,7 +211,11 @@ configuração completa justamente para não consagrar a superfície mutilada.
 **Correção proposta:** routers sempre montados; quando o store subjacente
 não existe, a rota responde 501/503 com mensagem estilo doctor. Entra no
 P1-b (que já mexe na composição do app para o modelo de dispositivos).
-**Estado:** aberto, priorizado para P1-b.
+**Estado:** RESOLVIDO no P1-b.1. Stores in-memory para memória/conversas/
+anexos fazem o chat e a memória funcionarem sem Postgres; o Developer
+Console saiu do contrato público (include_in_schema=False). Travado pelo
+teste `test_contrato_independe_do_adaptador`, que gera o schema nos dois
+modos e exige igualdade.
 
 ### ✅ #11 — Guardrail contra chute em valores ambíguos (segurança)
 Achado mais importante da saga da fatura, e não é sobre a fatura: ao

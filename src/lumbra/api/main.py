@@ -19,8 +19,10 @@ from lumbra.adapters.ai.fastembed_local import FastEmbedProvider
 from lumbra.adapters.ai.gateway import AIGateway
 from lumbra.adapters.ai.ollama import OllamaChatProvider
 from lumbra.adapters.attachments.filesystem import FilesystemBlobStore
+from lumbra.adapters.attachments.in_memory import InMemoryAttachmentStore
 from lumbra.adapters.attachments.postgres import PostgresAttachmentStore
 from lumbra.adapters.chunking.basic import default_chunker_registry
+from lumbra.adapters.conversations.in_memory import InMemoryConversationStore
 from lumbra.adapters.conversations.postgres import PostgresConversationStore
 from lumbra.adapters.documents.postgres import PostgresDocumentStore
 from lumbra.adapters.documents.processing_pg import PostgresProcessingStore
@@ -29,6 +31,7 @@ from lumbra.adapters.eventbus.redis_streams import RedisStreamsEventBus
 from lumbra.adapters.eventstore.in_memory import InMemoryEventStore
 from lumbra.adapters.eventstore.postgres import PostgresEventStore
 from lumbra.adapters.knowledge.postgres import PostgresKnowledgeGraph
+from lumbra.adapters.memory.in_memory import InMemoryMemoryStore
 from lumbra.adapters.memory.postgres import PostgresMemoryStore
 from lumbra.adapters.metadata.regex_extractors import default_extractors
 from lumbra.adapters.metrics.in_memory import InMemoryMetrics
@@ -67,9 +70,12 @@ from lumbra.pipeline.stages.index import IndexStage
 from lumbra.pipeline.stages.kg import KnowledgeGraphStage
 from lumbra.pipeline.stages.metadata import MetadataStage
 from lumbra.pipeline.stages.ocr import OCRStage
+from lumbra.ports.attachments import AttachmentStorePort
+from lumbra.ports.conversations import ConversationStorePort
 from lumbra.ports.document_store import DocumentRecord
 from lumbra.ports.event_bus import EventBusPort
 from lumbra.ports.event_store import EventStorePort
+from lumbra.ports.memory import MemoryStorePort
 from lumbra.ports.users import UserStorePort
 from lumbra.shared.config import Settings, get_settings
 
@@ -130,6 +136,33 @@ def create_default_app() -> FastAPI:
     )
     kernel.register_module(AIModule(gateway))
 
+    # Stack de chat/memória: presente nos DOIS modos de persistência, para que
+    # a superfície da Platform API seja idêntica independente do adaptador
+    # (docs/24, Regra 1). Em modo memória, stores in-memory tornam o Nó um
+    # ambiente leve de desenvolvimento; em postgres, os stores persistentes.
+    memory_store: MemoryStorePort
+    conversation_store: ConversationStorePort
+    attachment_store: AttachmentStorePort
+    blobs = FilesystemBlobStore(Path(settings.storage.attachments_dir))
+    if db is not None:
+        memory_store = PostgresMemoryStore(db)
+        conversation_store = PostgresConversationStore(db)
+        attachment_store = PostgresAttachmentStore(db)
+    else:
+        memory_store = InMemoryMemoryStore()
+        conversation_store = InMemoryConversationStore()
+        attachment_store = InMemoryAttachmentStore()
+
+    kernel.register_module(MemoryModule(store=memory_store, gateway=gateway))
+    chat_module = ChatModule(
+        conversations=conversation_store, gateway=gateway, attachments=attachment_store
+    )
+    kernel.register_module(chat_module)
+    kernel.register_module(ReflectionModule(conversations=conversation_store, gateway=gateway))
+    # Context First (princípio nº 5): memória sempre; documentos/anexos só há
+    # o que consultar quando existe acervo indexado (modo postgres).
+    kernel.context.register(MemoryContextProvider(kernel.skills))
+
     dev_router = None
     if db is not None:
         documents = PostgresDocumentStore(db)
@@ -169,22 +202,7 @@ def create_default_app() -> FastAPI:
                 gateway=gateway,
             )
         )
-        memory_store = PostgresMemoryStore(db)
-        kernel.register_module(MemoryModule(store=memory_store, gateway=gateway))
-        conversation_store = PostgresConversationStore(db)
-        attachment_store = PostgresAttachmentStore(db)
-        blobs = FilesystemBlobStore(Path(settings.storage.attachments_dir))
-        chat_module = ChatModule(
-            conversations=conversation_store,
-            gateway=gateway,
-            attachments=attachment_store,
-        )
-        kernel.register_module(chat_module)
-        kernel.register_module(ReflectionModule(conversations=conversation_store, gateway=gateway))
-        # Context First (princípio nº 5): o chat consome contexto pelos
-        # provedores, nunca consultando bancos diretamente
         kernel.context.register(DocumentContextProvider(kernel.skills))
-        kernel.context.register(MemoryContextProvider(kernel.skills))
         kernel.context.register(AttachmentContextProvider(attachment_store, documents))
         if not settings.is_production:
             from lumbra.api.auth import make_require_subject
@@ -224,16 +242,15 @@ def create_default_app() -> FastAPI:
         passwords=PasswordHasher(),
         tokens=TokenService(settings.security),
     )
-    extra_routers = [build_system_router(settings, kernel)]
-    if db is not None:
-        from lumbra.api.auth import make_require_subject as _mrs
+    from lumbra.api.auth import make_require_subject as _mrs
 
-        extra_routers.append(build_memory_router(kernel, memory_store, _mrs(auth.tokens)))
-        extra_routers.append(
-            build_chat_router(
-                kernel, conversation_store, _mrs(auth.tokens), chat_module, gateway, blobs
-            )
-        )
+    extra_routers = [
+        build_system_router(settings, kernel),
+        build_memory_router(kernel, memory_store, _mrs(auth.tokens)),
+        build_chat_router(
+            kernel, conversation_store, _mrs(auth.tokens), chat_module, gateway, blobs
+        ),
+    ]
     return create_app(
         settings, kernel=kernel, auth=auth, dev_router=dev_router, extra_routers=extra_routers
     )

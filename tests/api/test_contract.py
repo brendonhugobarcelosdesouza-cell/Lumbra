@@ -43,4 +43,37 @@ def test_toda_rota_e_versionada_ou_ops():
     assert fora == [], f"rotas fora de /api/v1 (ou ops): {fora}"
 
 
+def test_contrato_independe_do_adaptador():
+    """Regra 1 (docs/24) como trava: um cliente vê a MESMA API contra um Nó
+    em modo memória ou em modo postgres. Se a superfície divergir por
+    adaptador, este teste falha — foi o defeito #12, agora barrado."""
+    import os
+
+    from lumbra.shared.config import get_settings
+
+    def rotas(persistence: str) -> set[str]:
+        anterior = os.environ.get("LUMBRA_PERSISTENCE")
+        os.environ["LUMBRA_PERSISTENCE"] = persistence
+        os.environ["LUMBRA_EVENTBUS"] = "memory"
+        get_settings.cache_clear()
+        try:
+            from lumbra.api.main import create_default_app
+
+            return set(create_default_app().openapi()["paths"])
+        finally:
+            if anterior is None:
+                os.environ.pop("LUMBRA_PERSISTENCE", None)
+            else:
+                os.environ["LUMBRA_PERSISTENCE"] = anterior
+            get_settings.cache_clear()
+
+    memoria = rotas("memory")
+    postgres = rotas("postgres")
+    assert memoria == postgres, (
+        "a superfície da API difere entre modos de persistência (viola Regra 1):\n"
+        f"  só em memória: {sorted(memoria - postgres)}\n"
+        f"  só em postgres: {sorted(postgres - memoria)}"
+    )
+
+
 # canário anti-truncamento

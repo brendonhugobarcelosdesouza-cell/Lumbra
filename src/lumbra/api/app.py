@@ -117,8 +117,11 @@ def create_app(
         for router in extra_routers or []:
             app.include_router(router)
         if dev_router is not None and not cfg.is_production:
-            # rotas de dados já carregam a guarda internamente (claims por rota)
-            app.include_router(dev_router)
+            # rotas de dados já carregam a guarda internamente (claims por rota).
+            # include_in_schema=False: o Developer Console é ferramenta interna
+            # de primeira parte, não a Platform API que clientes/plugins
+            # consomem — não pertence ao contrato público (docs/24, Regra 1).
+            app.include_router(dev_router, include_in_schema=False)
             from fastapi.responses import HTMLResponse
 
             from lumbra.api.console_ui import CONSOLE_HTML
