@@ -10,6 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        # histórico completo: o gitleaks escaneia o INTERVALO de commits do
+        # push; com clone raso (depth 1) os commits intermediários faltam e
+        # o scan quebra com "stderr is not empty". fetch-depth: 0 é requisito
+        # documentado do gitleaks-action.
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
