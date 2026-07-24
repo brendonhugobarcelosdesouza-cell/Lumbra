@@ -38,8 +38,8 @@ jobs:
           cache: pip
       - name: Install
         run: pip install -e .[dev]
-      - name: Unit + API tests (cobertura mínima 85%)
-        run: pytest --cov --cov-report=term-missing -m "not integration"
+      - name: Unit + API tests (feedback rápido, sem infra)
+        run: pytest -m "not integration"
 
   windows:
     # Portabilidade: caminhos, fins de linha e encoding só quebram no Windows
@@ -78,8 +78,12 @@ jobs:
           cache: pip
       - name: Install
         run: pip install -e .[dev]
-      - name: Integration tests (Redis Streams)
-        run: pytest -m integration
+      # Portão de cobertura vive AQUI: só neste job a suíte inteira roda com
+      # infra real (Redis do `services` + Postgres embutido via pgserver), então
+      # é o único lugar onde a cobertura reflete o sistema todo — adapters,
+      # rotas da API e fluxos e2e inclusos. Rodar unit + integração juntos.
+      - name: Suíte completa + cobertura (piso 80%)
+        run: pytest --cov --cov-report=term-missing
 
   docker:
     runs-on: ubuntu-latest
