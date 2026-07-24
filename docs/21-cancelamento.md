@@ -14,14 +14,14 @@ cancelável. Não invente um mecanismo próprio: receba o token e coopere.
 
 ```python
 async def indexar(payload: SkillInput, ctx: SkillContext) -> SkillOutput:
-    token = ctx.cancellation                      # pode ser None
+    token = ctx.cancellation  # pode ser None
 
     for i, arquivo in enumerate(arquivos):
         if token:
-            token.raise_if_cancelled()            # ponto de verificação
+            token.raise_if_cancelled()  # ponto de verificação
         await processar(arquivo)
         if token:
-            token.step(f"{i + 1}/{len(arquivos)} arquivos")   # progresso
+            token.step(f"{i + 1}/{len(arquivos)} arquivos")  # progresso
 ```
 
 Duas linhas por laço. `raise_if_cancelled()` interrompe entre etapas;
@@ -44,8 +44,8 @@ o usuário cancela e a GPU continua ocupada.
 ## Envolvendo qualquer coisa demorada
 
 ```python
-dados = await token.guard(baixar_arquivo(url))          # uma chamada
-async for linha in token.guard_stream(ler_stream()):    # um fluxo
+dados = await token.guard(baixar_arquivo(url))  # uma chamada
+async for linha in token.guard_stream(ler_stream()):  # um fluxo
     ...
 ```
 
@@ -56,7 +56,7 @@ arquivos fecham na hora, sem esperar coletor de lixo.
 
 ```python
 token = ctx.cancellation or kernel.cancellation
-etapa = token.child("ocr")     # cancelar o pai cancela o filho
+etapa = token.child("ocr")  # cancelar o pai cancela o filho
 ```
 
 O token do kernel é cancelado no desligamento — herdar dele garante que
@@ -65,8 +65,7 @@ nada sobrevive ao processo.
 ## Prazo
 
 ```python
-tracker.start_skill("document.index", payload, subject=..., user_id=...,
-                    timeout_seconds=300)
+tracker.start_skill("document.index", payload, subject=..., user_id=..., timeout_seconds=300)
 ```
 
 Timeout vira um cancelamento com motivo próprio, e o estado final é
