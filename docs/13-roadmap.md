@@ -26,6 +26,35 @@ gantt
     Marketplace de plugins                :2028-02-01, 90d
 ```
 
+## Estado de execução — levas de consolidação
+
+Dentro do MVP, o backend evoluiu por épicos (E0–E2) e, depois, por **levas
+de consolidação** — trilhas de engenharia entre construir features e o
+dogfooding. Registro honesto do que está entregue:
+
+| Leva | Foco | Estado |
+|---|---|---|
+| E0–E2 | Fundação, Event Bus, IA, indexação/RAG, memória, chat com citações | ✅ |
+| Consolidação 1 | Auditoria (código morto, duplicação, segurança, performance, cobertura) | ✅ |
+| **Leva 3** | Developer Experience e instalação limpa: CLI `lumbra` (doctor/dev/up/init), System Health, First Run Wizard | ✅ (ADR-037) |
+| **Leva 2** | Endurecimento para produção do Event Bus | ✅ (ADRs 038–041) |
+
+**Leva 2 em detalhe** (Event Bus de produção): concorrência por despacho
+particionado — ordem por `partition_key`, paralelismo entre chaves,
+determinístico e genérico (ADR-038); resiliência — backoff exponencial,
+DLQ limitada, recuperação após crash comprovada por teste (ADR-039);
+observabilidade — `health()` + endpoint `/api/v1/system/eventbus` com
+lag/backlog/DLQ (ADR-040); carga e baseline com prova de escala — 1→8
+workers acelera ~7× em trabalho de I/O (ADR-041).
+
+**Fase corrente — dogfooding intensivo + corpus de avaliação.** O foco sai
+de construir infraestrutura e passa a validar a experiência de uso real.
+Problemas viram um backlog estruturado (`docs/22`); documentos reais de
+várias categorias formam um Corpus de Avaliação (`docs/23`) com perguntas
+de referência e respostas esperadas, alimentando continuamente o golden
+set. A revisão do chunking (#10) só é retomada quando o corpus for
+representativo — decisão guiada por muitos casos, não por um único.
+
 ## MVP — "o segundo cérebro mínimo" (desktop)
 
 **Promessa:** "Aponte para suas pastas e converse com tudo que você tem."

@@ -20,6 +20,15 @@ Estruturados (JSON) com campos obrigatórios: `timestamp`, `level`, `service`, `
 | Sync | conflitos/dia, divergência detectada | divergência = incidente |
 | Notificações | entregues, ignoradas, escalonadas | dose crítica não entregue = P1 |
 
+**Event Bus — implementado (L2-3, ADR-040).** `GET /api/v1/system/eventbus`
+devolve, por consumidor: métricas do dispatcher (throughput, tempo médio de
+espera e de processamento, eventos por worker, reprocessados), **backlog**
+(lag do grupo — eventos publicados ainda não entregues), **pendentes**
+(entregues sem ACK) e **DLQ depth**. É observabilidade *pull* (instantâneo
+sob demanda), sem segredo — o push para um coletor externo (Prometheus)
+fica para quando houver um consumindo. Baseline de carga em
+`tests/integration/test_eventbus_load.py` (ADR-041).
+
 ## Tracing
 
 Trace distribuído por `correlation_id` atravessando: request HTTP → comando → eventos → workers → chamadas de IA. Spans de IA anotam modelo, tokens e custo (sem conteúdo). Amostragem: 100% de erros, 10% do restante.

@@ -1,10 +1,30 @@
-# Issues do dogfooding
+# Backlog de dogfooding
 
 Registro dos problemas encontrados durante o uso real da plataforma. Cada
 item nasce de um cenário concreto, não de hipótese — é exatamente o que a
 inversão de levas (DX e dogfooding antes de otimização) pretendia gerar.
 
 Estado: ✅ resolvido · 🔧 em andamento · 📋 registrado (a priorizar)
+
+## Formato do registro (fase de dogfooding intensivo)
+
+A partir da fase de dogfooding intensivo, cada problema é registrado com
+seis campos, para permitir priorização por impacto e frequência, não por
+ordem de descoberta:
+
+```
+### [estado] #N — <título curto>
+- **Descrição:** o que acontece, no cenário concreto em que apareceu.
+- **Impacto para o usuário:** o que ele não consegue fazer, ou faz errado.
+- **Frequência:** sempre / frequente / ocasional / raro — e em que situação.
+- **Causa provável:** hipótese técnica (confirmar antes de corrigir).
+- **Prioridade:** alta / média / baixa (impacto × frequência).
+- **Solução sugerida:** caminho de correção, sem comprometer-se cedo demais.
+```
+
+Prioridade é derivada, não opinião: alta = impacto alto E frequência alta;
+baixa = um dos dois baixo. Todo problema entra aqui antes de virar código —
+a correção começa por confirmar a causa provável, nunca por adivinhá-la.
 
 ---
 

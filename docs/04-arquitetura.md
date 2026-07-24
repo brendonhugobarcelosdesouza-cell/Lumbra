@@ -59,7 +59,7 @@ Responsabilidades do kernel — e apenas estas:
 
 | Subsistema | Responsabilidade | Port principal |
 |---|---|---|
-| Event Bus | Pub/sub tipado, entrega at-least-once, DLQ, replay | `EventBusPort` |
+| Event Bus | Pub/sub tipado, entrega at-least-once, DLQ, replay; consumo concorrente particionado por `partition_key` (ordem por entidade, paralelismo entre entidades), resiliente (backoff, recuperação após crash) e observável (`/system/eventbus`) | `EventBusPort` |
 | Memory System | 5 memórias, consolidação, embeddings, esquecimento | `MemoryPort`, `VectorStorePort` |
 | RAG Engine | Chunking, retrieval híbrido (vetorial+BM25+grafo), re-ranking, citações | `RetrieverPort` |
 | Agent Orchestrator | Registro, ciclo de vida, roteamento de tarefas, supervisão de agentes | `AgentRegistryPort` |

@@ -68,6 +68,7 @@ A mesma informação está em `http://localhost:8000/api/v1/system` (página
 |---|---|
 | `/docs` | API interativa (Swagger) |
 | `/api/v1/system` | System Health — estado de cada peça |
+| `/api/v1/system/eventbus` | Saúde do Event Bus — throughput, backlog, pendentes, DLQ por consumidor |
 | `/api/v1/dev/console` | Developer Console — executar skills, ver eventos, logs, AI Trace |
 | `/api/v1/memory` | Auditar e editar o que a plataforma lembra de você |
 
@@ -129,6 +130,8 @@ Comece pelos [princípios](docs/00-principios.md) e pelas
 | 19 | [Escalabilidade](docs/19-escalabilidade.md) | Plano de crescimento |
 | 20 | [ADRs](docs/20-adrs.md) | Cada decisão, com o porquê e o que se perdeu |
 | 21 | [Cancelamento](docs/21-cancelamento.md) | Como tornar uma operação longa cancelável |
+| 22 | [Backlog de dogfooding](docs/22-dogfooding-issues.md) | Problemas do uso real, com impacto, causa e prioridade |
+| 23 | [Corpus de avaliação](docs/23-corpus-avaliacao.md) | Benchmark de qualidade do RAG por categoria de documento |
 
 ## Desenvolvimento
 
@@ -142,9 +145,15 @@ Os testes de integração sobem um PostgreSQL real (via `pgserver`), então
 não precisam de Docker para rodar.
 
 **Estado atual:** épicos E1 (memória e RAG) e E2 (chat assistente)
-implementados no backend. O status honesto de cada história está no
-[backlog](docs/12-backlog.md) — histórias parciais estão marcadas como
-parciais.
+implementados no backend, mais duas levas de consolidação — Leva 3
+(Developer Experience: CLI `lumbra`, System Health, wizard) e Leva 2
+(endurecimento do Event Bus: concorrência por chave de partição,
+resiliência com backoff e recuperação após crash, observabilidade e testes
+de carga). A fase corrente é **dogfooding intensivo** guiado por um
+[Corpus de Avaliação](docs/23-corpus-avaliacao.md), com os problemas
+registrados no [backlog de dogfooding](docs/22-dogfooding-issues.md). O
+status honesto de cada história está no [backlog](docs/12-backlog.md); as
+decisões de arquitetura, nos [ADRs](docs/20-adrs.md).
 
 ## Stack
 

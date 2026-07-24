@@ -14,11 +14,22 @@ Todo evento segue o mesmo envelope (Pydantic, validado no publish e no consume):
   "correlation_id": "uuid",
   "causation_id": "uuid",
   "producer": "health-agent@1.0.0",
+  "partition_key": "document:uuid",
   "payload": { }
 }
 ```
 
 Regras: nomes `contexto.evento_no_passado`; payloads versionados (`schema_version`), mudanças breaking exigem nova versão com consumo paralelo; entrega at-least-once → consumidores idempotentes (dedup por `event_id`); DLQ por consumidor após N tentativas; tudo gravado em `events_log` (replay em dev, auditoria em prod).
+
+**`partition_key` e ordem (ADR-038).** A chave de particionamento controla
+a concorrência do consumo: eventos com a mesma chave são processados **em
+ordem** por um consumidor; chaves diferentes rodam **em paralelo**, até
+`consumer_concurrency` workers. A chave vem do próprio payload —
+`EventPayload.partition_key()` é sobrescrito por cada payload de entidade
+(`document:{id}`, `memory:{id}`, `conversation:{id}`) e gravado no envelope
+na publicação. Sem chave, o fallback é o `event_id` (sem ordem a preservar,
+paralelismo máximo). O Event Bus nunca conhece os campos do payload: novos
+tipos de entidade definem sua chave sem alterar o bus.
 
 ## Catálogo (por contexto)
 

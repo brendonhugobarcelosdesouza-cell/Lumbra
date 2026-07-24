@@ -1,0 +1,9 @@
+# Normaliza fins de linha: LF no repositório, conversão no checkout.
+* text=auto
+
+# Scripts do PowerShell 5.1 precisam de CRLF + UTF-8 BOM para ler acentos.
+# Sem isto, o Linux/CI enxerga o working tree CRLF como "modificado".
+*.ps1 text eol=crlf
+
+# Bundles do git são binários (evita normalização).
+*.bundle binary
