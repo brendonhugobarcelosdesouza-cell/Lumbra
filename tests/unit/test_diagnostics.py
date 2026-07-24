@@ -4,6 +4,8 @@ Um diagnóstico sem conserto só transfere o problema para quem menos sabe
 resolvê-lo. Estes testes travam essa promessa.
 """
 
+import sys
+
 import pytest
 from pydantic import SecretStr
 
@@ -107,6 +109,10 @@ class TestVerificacoesIndividuais:
         )
         assert resultado.status is Status.OK
 
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="chmod POSIX não restringe escrita em diretório no Windows (usa ACLs)",
+    )
     async def test_pasta_sem_permissao_e_falha(self, tmp_path):
         alvo = tmp_path / "sem-permissao"
         alvo.mkdir()

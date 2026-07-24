@@ -6,7 +6,8 @@ from __future__ import annotations
 import asyncio
 import re
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 from uuid import UUID
 
 from lumbra.ports.attachments import BlobStorePort
@@ -42,7 +43,10 @@ class FilesystemBlobStore(BlobStorePort):
         await asyncio.to_thread(caminho.unlink, True)
 
     def _path_of(self, uri: str) -> Path:
-        caminho = Path(unquote(urlparse(uri).path)).resolve()
+        # url2pathname (não urlparse+unquote cru) para converter o path do
+        # file:// URI em caminho nativo: no Windows, "/C:/Users/..." vira
+        # "C:\\Users\\..." corretamente; no POSIX é passthrough + unquote.
+        caminho = Path(url2pathname(urlparse(uri).path)).resolve()
         raiz = self._root.resolve()
         # defesa contra travessia: só lemos o que está sob a raiz
         if not caminho.is_relative_to(raiz):
