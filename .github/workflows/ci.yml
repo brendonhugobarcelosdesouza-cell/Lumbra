@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
   pull_request:
 
 jobs:
@@ -40,6 +40,25 @@ jobs:
         run: pip install -e .[dev]
       - name: Unit + API tests (cobertura mínima 85%)
         run: pytest --cov --cov-report=term-missing -m "not integration"
+
+  windows:
+    # Portabilidade: caminhos, fins de linha e encoding só quebram no Windows
+    # (ex.: file:// URI -> caminho nativo no blob store). Roda unit + API, que
+    # é onde essa classe de bug aparece. Os testes de Redis pulam (services do
+    # GitHub Actions só sobem em runner Linux); a integração completa no
+    # Windows é validada localmente com `pytest`.
+    runs-on: windows-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: pip install -e .[dev]
+      - name: Unit + API tests (Windows)
+        run: pytest -m "not integration"
 
   integration:
     runs-on: ubuntu-latest
