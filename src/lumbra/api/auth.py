@@ -20,6 +20,7 @@ from pydantic import BaseModel, EmailStr, Field
 from lumbra.adapters.security.passwords import PasswordHasher
 from lumbra.adapters.security.tokens import Claims, TokenError, TokenPair, TokenService, TokenType
 from lumbra.domain.events import EventPayload, EventRegistry
+from lumbra.domain.scopes import concede
 from lumbra.kernel.kernel import LumbraKernel
 from lumbra.ports.users import DuplicateEmailError, UserNotFoundError, UserStorePort
 from lumbra.shared.logging import get_logger
@@ -115,7 +116,10 @@ def build_auth_router(services: AuthServices, kernel: LumbraKernel | None) -> AP
             )
         _log.info("login_succeeded", user_id=str(user.id))
         await _publish(LoginSucceeded(method="password"), user.id)
-        return services.tokens.issue_pair(user.id)
+        # o DONO autenticado por senha tem autoridade total sobre o próprio Nó
+        # (escopo admin "*"); dispositivos e plugins recebem escopos limitados
+        # ao serem pareados (ADRs 045/047)
+        return services.tokens.issue_pair(user.id, scopes=("*",))
 
     @router.post("/refresh")
     async def refresh(body: RefreshRequest) -> TokenPair:
@@ -157,6 +161,29 @@ def make_require_subject(
         return claims
 
     return require_subject
+
+
+def make_require_scope(
+    tokens: TokenService,
+) -> Callable[[str], Callable[..., Awaitable[Claims]]]:
+    """Fábrica de guardas por ESCOPO (ADRs 045/047). Autentica como
+    ``require_subject`` e, além disso, exige que os escopos do principal
+    cubram o escopo da rota. O dono (login por senha) carrega ``*`` e passa
+    em tudo; dispositivos e plugins passam só no que lhes foi concedido."""
+    require_subject = make_require_subject(tokens)
+
+    def require_scope(scope: str) -> Callable[..., Awaitable[Claims]]:
+        # Depends como VALOR DEFAULT (não dentro de Annotated): com
+        # `from __future__ import annotations` a anotação vira string e o
+        # FastAPI não resolveria ``require_subject`` (variável de closure).
+        async def guarda(claims: Claims = Depends(require_subject)) -> Claims:
+            if not concede(claims.scopes, scope):
+                raise HTTPException(status.HTTP_403_FORBIDDEN, f"escopo necessário: {scope}")
+            return claims
+
+        return guarda
+
+    return require_scope
 
 
 # canário anti-truncamento

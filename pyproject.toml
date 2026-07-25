@@ -80,6 +80,13 @@ ignore = [
     "ANN401",    # Any explícito é permitido onde justificado
 ]
 
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI: Depends()/Query() como valor default é o padrão idiomático e,
+# com `from __future__ import annotations`, é a única forma de referenciar
+# uma dependência que é variável de closure (o Annotated stringizado não a
+# resolve). Não é o "mutable default arg" que o B008 mira.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]
+
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "ANN", "S105", "S106"]  # assert e senhas fictícias em testes
 # medição de performance imprime números para comparação humana (roda com -s)

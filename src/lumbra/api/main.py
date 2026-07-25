@@ -24,6 +24,8 @@ from lumbra.adapters.attachments.postgres import PostgresAttachmentStore
 from lumbra.adapters.chunking.basic import default_chunker_registry
 from lumbra.adapters.conversations.in_memory import InMemoryConversationStore
 from lumbra.adapters.conversations.postgres import PostgresConversationStore
+from lumbra.adapters.devices.in_memory import InMemoryDeviceStore
+from lumbra.adapters.devices.postgres import PostgresDeviceStore
 from lumbra.adapters.documents.postgres import PostgresDocumentStore
 from lumbra.adapters.documents.processing_pg import PostgresProcessingStore
 from lumbra.adapters.eventbus.in_memory import InMemoryEventBus
@@ -45,6 +47,7 @@ from lumbra.adapters.users.postgres import PostgresUserStore
 from lumbra.api.app import create_app
 from lumbra.api.auth import AuthServices
 from lumbra.api.chat import build_chat_router
+from lumbra.api.devices import build_devices_router
 from lumbra.api.memory import build_memory_router
 from lumbra.api.system import build_system_router
 from lumbra.context.providers import (
@@ -72,6 +75,7 @@ from lumbra.pipeline.stages.metadata import MetadataStage
 from lumbra.pipeline.stages.ocr import OCRStage
 from lumbra.ports.attachments import AttachmentStorePort
 from lumbra.ports.conversations import ConversationStorePort
+from lumbra.ports.devices import DeviceStorePort
 from lumbra.ports.document_store import DocumentRecord
 from lumbra.ports.event_bus import EventBusPort
 from lumbra.ports.event_store import EventStorePort
@@ -143,15 +147,18 @@ def create_default_app() -> FastAPI:
     memory_store: MemoryStorePort
     conversation_store: ConversationStorePort
     attachment_store: AttachmentStorePort
+    device_store: DeviceStorePort
     blobs = FilesystemBlobStore(Path(settings.storage.attachments_dir))
     if db is not None:
         memory_store = PostgresMemoryStore(db)
         conversation_store = PostgresConversationStore(db)
         attachment_store = PostgresAttachmentStore(db)
+        device_store = PostgresDeviceStore(db)
     else:
         memory_store = InMemoryMemoryStore()
         conversation_store = InMemoryConversationStore()
         attachment_store = InMemoryAttachmentStore()
+        device_store = InMemoryDeviceStore()
 
     kernel.register_module(MemoryModule(store=memory_store, gateway=gateway))
     chat_module = ChatModule(
@@ -250,6 +257,7 @@ def create_default_app() -> FastAPI:
         build_chat_router(
             kernel, conversation_store, _mrs(auth.tokens), chat_module, gateway, blobs
         ),
+        build_devices_router(kernel, device_store, auth.tokens),
     ]
     return create_app(
         settings, kernel=kernel, auth=auth, dev_router=dev_router, extra_routers=extra_routers
