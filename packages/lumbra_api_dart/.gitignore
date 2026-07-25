@@ -1,0 +1,4 @@
+# O cliente Dart é GERADO do contrato (generate.sh) em generated/, nunca
+# commitado: fica sempre em sincronia com core/contracts/ por construção, e
+# o CI o regenera e compila a cada push. Versionamos só o que é escrito à mão.
+generated/

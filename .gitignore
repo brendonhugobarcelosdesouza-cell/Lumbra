@@ -14,3 +14,4 @@ build/
 .pytest_cache/
 node_modules/
 lumbra-history.bundle
+openapitools.json
