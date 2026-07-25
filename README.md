@@ -21,10 +21,14 @@ inventar.
 Você precisa de **Python 3.12+**, **Docker** (para Postgres e Redis) e
 **[Ollama](https://ollama.com)** (para o modelo local).
 
+A Lumbra é uma **plataforma**: um engine Python (o Nó) em `core/`, e
+interfaces em `clients/` que consomem exclusivamente a Platform API. O
+engine é onde se desenvolve hoje.
+
 ```bash
-git clone <repo> && cd lumbra
+git clone <repo> && cd lumbra/core
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\Activate.ps1
-pip install -e ".[dev]"
+pip install -e ".[dev]"                              # ou, da raiz: make install
 
 ollama pull qwen2.5:7b     # modelo local (~4,7 GB, uma vez só)
 
@@ -32,6 +36,11 @@ lumbra doctor              # verifica o ambiente e diz como corrigir o que falta
 lumbra dev                 # sobe banco, aplica migrações e inicia a API
 lumbra init                # assistente de primeira execução (em outro terminal)
 ```
+
+Estrutura do monorepo: `core/` (engine Python + Platform API + contrato),
+`clients/app/` (cliente Flutter único para as 6 plataformas — ADR-043),
+`packages/` (SDKs gerados do contrato), `docs/` (arquitetura e ADRs),
+`docker/` e `docker-compose.yml` (infra).
 
 O `lumbra init` cria sua conta, indexa uma pasta sua, guarda uma primeira
 memória e faz uma pergunta de teste — do zero ao primeiro uso real.
@@ -72,7 +81,7 @@ A mesma informação está em `http://localhost:8000/api/v1/system` (página
 | `/api/v1/dev/console` | Developer Console — executar skills, ver eventos, logs, AI Trace |
 | `/api/v1/memory` | Auditar e editar o que a plataforma lembra de você |
 
-O `scripts/chat.ps1` (Windows) conversa pelo terminal com streaming,
+O `core/scripts/chat.ps1` (Windows) conversa pelo terminal com streaming,
 anexos (`/anexar arquivo`), troca de modelo (`/usar`) e cancelamento (ESC).
 
 ---

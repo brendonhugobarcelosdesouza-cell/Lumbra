@@ -1,24 +1,29 @@
-.PHONY: install lint format typecheck test test-cov ci up down
+.PHONY: install lint format typecheck test test-cov ci up down contract
+
+# O engine Python vive em core/; os alvos de código rodam lá. A infra
+# (docker compose) orquestra o monorepo e roda da raiz.
+CORE = core
 
 install:            ## instala dependências de dev
-	pip install -e .[dev]
+	cd $(CORE) && pip install -e .[dev]
 
 lint:               ## ruff (lint + formato)
-	ruff check .
-	ruff format --check .
+	cd $(CORE) && ruff check . && ruff format --check .
 
 format:             ## aplica formatação
-	ruff check --fix .
-	ruff format .
+	cd $(CORE) && ruff check --fix . && ruff format .
 
 typecheck:          ## mypy strict
-	mypy
+	cd $(CORE) && mypy
 
 test:               ## testes rápidos (sem integração)
-	pytest -m "not integration"
+	cd $(CORE) && pytest -m "not integration"
 
-test-cov:           ## testes com gate de cobertura (85%)
-	pytest --cov --cov-report=term-missing -m "not integration"
+test-cov:           ## suíte completa com gate de cobertura
+	cd $(CORE) && pytest --cov --cov-report=term-missing
+
+contract:           ## regenera o contrato OpenAPI (core/contracts/)
+	cd $(CORE) && python -m lumbra.api.contract
 
 ci: lint typecheck test-cov   ## tudo que o CI roda
 

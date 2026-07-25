@@ -26,7 +26,12 @@ from lumbra.cli import console
 from lumbra.diagnostics import checks
 from lumbra.shared.config import Settings, get_settings
 
-RAIZ = Path(__file__).resolve().parents[3]
+# core/src/lumbra/cli/main.py → parents[3] = core/ (onde vive o alembic.ini)
+CORE_RAIZ = Path(__file__).resolve().parents[3]
+# a raiz do monorepo (um nível acima de core/) orquestra a infra: é onde
+# ficam docker-compose.yml e docker/ — toda interface consome a Platform API,
+# mas o compose sobe Postgres/Redis/API do produto inteiro
+MONOREPO_RAIZ = CORE_RAIZ.parent
 
 
 def _settings() -> Settings:
@@ -119,7 +124,7 @@ def _subir_servicos() -> bool:
     console.linha("Subindo Postgres e Redis (docker compose)...")
     resultado = subprocess.run(
         [shutil.which("docker") or "docker", "compose", "up", "-d", "postgres", "redis"],
-        cwd=RAIZ,
+        cwd=MONOREPO_RAIZ,
         check=False,
     )
     return resultado.returncode == 0
@@ -131,7 +136,7 @@ def _aplicar_migracoes() -> bool:
     from alembic.config import Config
 
     try:
-        command.upgrade(Config(str(RAIZ / "alembic.ini")), "head")
+        command.upgrade(Config(str(CORE_RAIZ / "alembic.ini")), "head")
     except Exception as exc:
         console.erro(f"falha ao migrar: {exc}")
         console.linha(
