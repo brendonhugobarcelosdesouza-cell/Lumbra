@@ -112,7 +112,7 @@ def build_devices_router(
         except keys.InvalidPublicKeyError as exc:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from None
         try:
-            escopos = tuple(ScopeSet(scopes=set(body.scopes)))
+            escopos = tuple(ScopeSet(scopes=frozenset(body.scopes)))
         except InvalidScopeError as exc:
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from None
         try:
