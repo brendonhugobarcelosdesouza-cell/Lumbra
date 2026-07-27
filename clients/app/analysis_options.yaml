@@ -1,0 +1,3 @@
+# Regras de lint do app (o cliente gerado é uma dependência e não é
+# analisado). Mantemos os lints recomendados do Flutter.
+include: package:flutter_lints/flutter.yaml

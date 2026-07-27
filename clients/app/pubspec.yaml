@@ -1,0 +1,25 @@
+name: lumbra_app
+description: "Lumbra Platform — cliente desktop (Flutter), um código para as 6 plataformas."
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+  flutter: ">=3.19.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.5.1
+  # o cliente da Platform API é GERADO do contrato (P1-d): o app nunca
+  # escreve HTTP à mão. Materializado por packages/lumbra_api_dart/generate.sh
+  lumbra_api:
+    path: ../../packages/lumbra_api_dart/generated
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

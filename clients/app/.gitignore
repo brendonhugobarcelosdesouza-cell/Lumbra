@@ -1,0 +1,16 @@
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+pubspec.lock
+
+# Pastas nativas por plataforma: materializadas por `flutter create .` no
+# build (P2-f, instalador). Não versionadas — são geradas, como o cliente
+# Dart. O código do app vive só em lib/ e test/ (um código, 6 plataformas).
+android/
+ios/
+linux/
+macos/
+windows/
+web/
