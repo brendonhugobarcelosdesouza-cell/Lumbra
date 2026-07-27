@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from lumbra.adapters.security.tokens import Claims
 from lumbra.kernel.kernel import LumbraKernel
-from lumbra.modules.chat import ChatModule
+from lumbra.modules.chat import ChatModule, HistoryOutput, SendOutput, StartOutput
 from lumbra.ports.ai import AIGatewayPort
 from lumbra.ports.attachments import BlobStorePort
 from lumbra.ports.conversations import ConversationNotFoundError, ConversationStorePort
@@ -36,6 +36,21 @@ _em_andamento: dict[tuple[str, str], CancellationToken] = {}
 
 def _sse(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+class ConversationOut(BaseModel):
+    """Conversa no contrato tipado (antes: dict solto na listagem)."""
+
+    id: str
+    user_id: str
+    title: str | None = None
+    model_policy: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+    last_message_at: str | None = None
+
+
+class ConversationsOut(BaseModel):
+    conversations: tuple[ConversationOut, ...] = ()
 
 
 class StartBody(BaseModel):
@@ -82,7 +97,11 @@ def build_chat_router(
         except (SkillError, ValueError) as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from None
 
-    @router.post("/conversations", status_code=status.HTTP_201_CREATED)
+    @router.post(
+        "/conversations",
+        status_code=status.HTTP_201_CREATED,
+        response_model=StartOutput,
+    )
     async def start(body: StartBody, claims: authed) -> dict[str, Any]:
         result = await _run("chat.start", body.model_dump(), claims)
         return dict(result.model_dump(mode="json"))
@@ -140,12 +159,12 @@ def build_chat_router(
         )
         return dict(result.model_dump(mode="json"))
 
-    @router.get("/conversations")
+    @router.get("/conversations", response_model=ConversationsOut)
     async def list_conversations(claims: authed, limit: int = 50) -> dict[str, Any]:
         items = await conversations.list_by_user(claims.subject, limit=limit)
         return {"conversations": [c.model_dump(mode="json") for c in items]}
 
-    @router.post("/conversations/{conversation_id}/messages")
+    @router.post("/conversations/{conversation_id}/messages", response_model=SendOutput)
     async def send(conversation_id: str, body: SendBody, claims: authed) -> dict[str, Any]:
         result = await _run(
             "chat.send", {"conversation_id": conversation_id, **body.model_dump()}, claims
@@ -246,7 +265,10 @@ def build_chat_router(
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    @router.get("/conversations/{conversation_id}/messages")
+    @router.get(
+        "/conversations/{conversation_id}/messages",
+        response_model=HistoryOutput,
+    )
     async def history(conversation_id: str, claims: authed, limit: int = 50) -> dict[str, Any]:
         result = await _run(
             "chat.history", {"conversation_id": conversation_id, "limit": limit}, claims

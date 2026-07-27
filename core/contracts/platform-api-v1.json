@@ -74,6 +74,225 @@
         "title": "Body_upload_api_v1_chat_conversations__conversation_id__attachments_post",
         "type": "object"
       },
+      "ChatMessageOut": {
+        "description": "Mensagem do histórico — tipada no contrato (antes: dict solto).",
+        "properties": {
+          "citations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CitationOut"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "tokens_in": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens In"
+          },
+          "tokens_out": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens Out"
+          }
+        },
+        "required": [
+          "id",
+          "conversation_id",
+          "role",
+          "content",
+          "created_at"
+        ],
+        "title": "ChatMessageOut",
+        "type": "object"
+      },
+      "CitationOut": {
+        "description": "Fonte citada numa resposta — tipada no contrato (antes: dict solto).\nEspelha o ``Citation`` do domínio em tipos JSON (ref_id como string).",
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "ordinal": {
+            "title": "Ordinal",
+            "type": "integer"
+          },
+          "ref_id": {
+            "title": "Ref Id",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "snippet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snippet"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uri"
+          }
+        },
+        "required": [
+          "ordinal",
+          "kind",
+          "ref_id"
+        ],
+        "title": "CitationOut",
+        "type": "object"
+      },
+      "ConversationOut": {
+        "description": "Conversa no contrato tipado (antes: dict solto na listagem).",
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_message_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Message At"
+          },
+          "model_policy": {
+            "additionalProperties": true,
+            "title": "Model Policy",
+            "type": "object"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "created_at"
+        ],
+        "title": "ConversationOut",
+        "type": "object"
+      },
+      "ConversationsOut": {
+        "properties": {
+          "conversations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ConversationOut"
+            },
+            "title": "Conversations",
+            "type": "array"
+          }
+        },
+        "title": "ConversationsOut",
+        "type": "object"
+      },
       "DevicePlatform": {
         "enum": [
           "windows",
@@ -221,6 +440,22 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HistoryOutput": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ChatMessageOut"
+            },
+            "title": "Messages",
+            "type": "array"
+          }
+        },
+        "required": [
+          "messages"
+        ],
+        "title": "HistoryOutput",
+        "type": "object"
+      },
       "PolicyBody": {
         "properties": {
           "privacy": {
@@ -365,6 +600,52 @@
         "title": "SendBody",
         "type": "object"
       },
+      "SendOutput": {
+        "properties": {
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/CitationOut"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "message_id": {
+            "title": "Message Id",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "tokens_in": {
+            "title": "Tokens In",
+            "type": "integer"
+          },
+          "tokens_out": {
+            "title": "Tokens Out",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "message_id",
+          "text",
+          "citations",
+          "provider",
+          "model",
+          "tokens_in",
+          "tokens_out"
+        ],
+        "title": "SendOutput",
+        "type": "object"
+      },
       "StartBody": {
         "properties": {
           "privacy": {
@@ -396,6 +677,36 @@
           }
         },
         "title": "StartBody",
+        "type": "object"
+      },
+      "StartOutput": {
+        "properties": {
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "privacy": {
+            "title": "Privacy",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "privacy",
+          "provider"
+        ],
+        "title": "StartOutput",
         "type": "object"
       },
       "TokenPair": {
@@ -617,9 +928,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response List Conversations Api V1 Chat Conversations Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ConversationsOut"
                 }
               }
             },
@@ -663,9 +972,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Start Api V1 Chat Conversations Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/StartOutput"
                 }
               }
             },
@@ -829,9 +1136,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response History Api V1 Chat Conversations  Conversation Id  Messages Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/HistoryOutput"
                 }
               }
             },
@@ -886,9 +1191,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Send Api V1 Chat Conversations  Conversation Id  Messages Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/SendOutput"
                 }
               }
             },
