@@ -39,6 +39,26 @@ _CANONICAL_ENV = {
 }
 
 
+def _make_codegen_portable(schema: dict[str, Any]) -> dict[str, Any]:
+    """Achata o ``anyOf:[string,integer]`` do ``loc`` do ValidationError.
+
+    O ``loc`` (caminho do erro de validação) do FastAPI mistura strings e
+    índices inteiros. O gerador Dart produz código INVÁLIDO para ``anyOf``
+    de primitivos (uma classe ``ValidationErrorLocInner`` quebrada). Como
+    ``loc`` é um detalhe de erro que clientes não consomem tipado, mapeá-lo
+    para tipo livre (``{}`` = any) mantém o contrato honesto (segue aceitando
+    string ou inteiro) e portável para geração de cliente. É a única
+    concessão do contrato à realidade do codegen, e documentada.
+    """
+    try:
+        loc = schema["components"]["schemas"]["ValidationError"]["properties"]["loc"]
+        if isinstance(loc.get("items"), dict) and "anyOf" in loc["items"]:
+            loc["items"] = {}
+    except (KeyError, TypeError):
+        pass
+    return schema
+
+
 def openapi_schema() -> dict[str, Any]:
     """Esquema OpenAPI do app padrão, gerado em configuração canônica."""
     saved = {key: os.environ.get(key) for key in _CANONICAL_ENV}
@@ -49,7 +69,7 @@ def openapi_schema() -> dict[str, Any]:
     try:
         from lumbra.api.main import create_default_app
 
-        return create_default_app().openapi()
+        return _make_codegen_portable(create_default_app().openapi())
     finally:
         for key, value in saved.items():
             if value is None:

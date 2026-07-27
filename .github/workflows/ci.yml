@@ -124,7 +124,7 @@ jobs:
         working-directory: packages/lumbra_api_dart/generated
         run: |
           dart pub get
-          dart analyze --no-fatal-warnings --no-fatal-infos
+          dart analyze --no-fatal-warnings
 
   flutter-app:
     # O cliente desktop Flutter (P2). Não há SDK Dart/Flutter no ambiente de

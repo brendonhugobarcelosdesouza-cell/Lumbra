@@ -436,16 +436,7 @@
             "title": "Input"
           },
           "loc": {
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
-            },
+            "items": {},
             "title": "Location",
             "type": "array"
           },
