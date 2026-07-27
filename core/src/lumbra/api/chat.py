@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from lumbra.adapters.security.tokens import Claims
 from lumbra.kernel.kernel import LumbraKernel
-from lumbra.modules.chat import ChatModule, HistoryOutput, SendOutput, StartOutput
+from lumbra.modules.chat import ChatModule, StartOutput
 from lumbra.ports.ai import AIGatewayPort
 from lumbra.ports.attachments import BlobStorePort
 from lumbra.ports.conversations import ConversationNotFoundError, ConversationStorePort
@@ -36,6 +36,50 @@ _em_andamento: dict[tuple[str, str], CancellationToken] = {}
 
 def _sse(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+class CitationOut(BaseModel):
+    """Fonte citada numa resposta — espelha o Citation do domínio em tipos
+    JSON. Modelo da API (contrato), separado da saída interna da skill."""
+
+    ordinal: int
+    kind: str
+    ref_id: str
+    title: str | None = None
+    uri: str | None = None
+    score: float | None = None
+    snippet: str | None = None
+
+
+class ChatMessageOut(BaseModel):
+    """Mensagem do histórico no contrato tipado."""
+
+    id: str
+    conversation_id: str
+    role: str
+    content: str
+    created_at: str
+    provider: str | None = None
+    model: str | None = None
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    citations: tuple[CitationOut, ...] = ()
+
+
+class SendResponse(BaseModel):
+    """Resposta do /messages: o texto do assistente e suas citações."""
+
+    message_id: str
+    text: str
+    citations: tuple[CitationOut, ...] = ()
+    provider: str
+    model: str
+    tokens_in: int
+    tokens_out: int
+
+
+class HistoryResponse(BaseModel):
+    messages: tuple[ChatMessageOut, ...] = ()
 
 
 class ConversationOut(BaseModel):
@@ -164,7 +208,7 @@ def build_chat_router(
         items = await conversations.list_by_user(claims.subject, limit=limit)
         return {"conversations": [c.model_dump(mode="json") for c in items]}
 
-    @router.post("/conversations/{conversation_id}/messages", response_model=SendOutput)
+    @router.post("/conversations/{conversation_id}/messages", response_model=SendResponse)
     async def send(conversation_id: str, body: SendBody, claims: authed) -> dict[str, Any]:
         result = await _run(
             "chat.send", {"conversation_id": conversation_id, **body.model_dump()}, claims
@@ -267,7 +311,7 @@ def build_chat_router(
 
     @router.get(
         "/conversations/{conversation_id}/messages",
-        response_model=HistoryOutput,
+        response_model=HistoryResponse,
     )
     async def history(conversation_id: str, claims: authed, limit: int = 50) -> dict[str, Any]:
         result = await _run(

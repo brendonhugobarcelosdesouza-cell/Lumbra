@@ -75,7 +75,7 @@
         "type": "object"
       },
       "ChatMessageOut": {
-        "description": "Mensagem do histórico — tipada no contrato (antes: dict solto).",
+        "description": "Mensagem do histórico no contrato tipado.",
         "properties": {
           "citations": {
             "default": [],
@@ -161,7 +161,7 @@
         "type": "object"
       },
       "CitationOut": {
-        "description": "Fonte citada numa resposta — tipada no contrato (antes: dict solto).\nEspelha o ``Citation`` do domínio em tipos JSON (ref_id como string).",
+        "description": "Fonte citada numa resposta — espelha o Citation do domínio em tipos\nJSON. Modelo da API (contrato), separado da saída interna da skill.",
         "properties": {
           "kind": {
             "title": "Kind",
@@ -440,9 +440,10 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
-      "HistoryOutput": {
+      "HistoryResponse": {
         "properties": {
           "messages": {
+            "default": [],
             "items": {
               "$ref": "#/components/schemas/ChatMessageOut"
             },
@@ -450,10 +451,7 @@
             "type": "array"
           }
         },
-        "required": [
-          "messages"
-        ],
-        "title": "HistoryOutput",
+        "title": "HistoryResponse",
         "type": "object"
       },
       "PolicyBody": {
@@ -600,9 +598,11 @@
         "title": "SendBody",
         "type": "object"
       },
-      "SendOutput": {
+      "SendResponse": {
+        "description": "Resposta do /messages: o texto do assistente e suas citações.",
         "properties": {
           "citations": {
+            "default": [],
             "items": {
               "$ref": "#/components/schemas/CitationOut"
             },
@@ -637,13 +637,12 @@
         "required": [
           "message_id",
           "text",
-          "citations",
           "provider",
           "model",
           "tokens_in",
           "tokens_out"
         ],
-        "title": "SendOutput",
+        "title": "SendResponse",
         "type": "object"
       },
       "StartBody": {
@@ -1136,7 +1135,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HistoryOutput"
+                  "$ref": "#/components/schemas/HistoryResponse"
                 }
               }
             },
@@ -1191,7 +1190,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SendOutput"
+                  "$ref": "#/components/schemas/SendResponse"
                 }
               }
             },

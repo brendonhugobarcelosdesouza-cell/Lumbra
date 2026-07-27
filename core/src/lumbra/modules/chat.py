@@ -116,34 +116,6 @@ def register_chat_events(registry: EventRegistry) -> None:
 # ------------------------------------------------------------------ skills I/O
 
 
-class CitationOut(SkillOutput):
-    """Fonte citada numa resposta — tipada no contrato (antes: dict solto).
-    Espelha o ``Citation`` do domínio em tipos JSON (ref_id como string)."""
-
-    ordinal: int
-    kind: str
-    ref_id: str
-    title: str | None = None
-    uri: str | None = None
-    score: float | None = None
-    snippet: str | None = None
-
-
-class ChatMessageOut(SkillOutput):
-    """Mensagem do histórico — tipada no contrato (antes: dict solto)."""
-
-    id: str
-    conversation_id: str
-    role: str
-    content: str
-    created_at: str
-    provider: str | None = None
-    model: str | None = None
-    tokens_in: int | None = None
-    tokens_out: int | None = None
-    citations: tuple[CitationOut, ...] = ()
-
-
 class StartInput(SkillInput):
     title: str | None = None
     privacy: PrivacyMode = PrivacyMode.LOCAL_ONLY
@@ -203,7 +175,7 @@ class SendInput(SkillInput):
 class SendOutput(SkillOutput):
     message_id: str
     text: str
-    citations: tuple[CitationOut, ...]
+    citations: tuple[dict[str, Any], ...]
     provider: str
     model: str
     tokens_in: int
@@ -216,7 +188,7 @@ class HistoryInput(SkillInput):
 
 
 class HistoryOutput(SkillOutput):
-    messages: tuple[ChatMessageOut, ...]
+    messages: tuple[dict[str, Any], ...]
 
 
 @dataclass(frozen=True)
@@ -621,9 +593,7 @@ class ChatModule(LumbraModule):
         return SendOutput(
             message_id=str(message_id),
             text=result.text,
-            citations=tuple(
-                CitationOut.model_validate(c.model_dump(mode="json")) for c in turn.citations
-            ),
+            citations=tuple(c.model_dump(mode="json") for c in turn.citations),
             provider=result.provider,
             model=result.model,
             tokens_in=result.input_tokens,
@@ -797,11 +767,7 @@ class ChatModule(LumbraModule):
         if conversation.user_id != ctx.user_id:
             raise PermissionError("conversa de outro usuário")
         messages = await self._conversations.history(conversation_id, limit=payload.limit)
-        return HistoryOutput(
-            messages=tuple(
-                ChatMessageOut.model_validate(m.model_dump(mode="json")) for m in messages
-            )
-        )
+        return HistoryOutput(messages=tuple(m.model_dump(mode="json") for m in messages))
 
 
 # ------------------------------------------------------------------ montagem do prompt
