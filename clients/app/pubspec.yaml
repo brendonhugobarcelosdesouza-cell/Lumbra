@@ -11,6 +11,9 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_riverpod: ^2.5.1
+  # guarda o token de sessão nos cofres do SO (Keychain/Credential Manager/
+  # libsecret) — nunca em texto plano (ADR-045, cifragem em repouso)
+  flutter_secure_storage: ^9.2.2
   # o cliente da Platform API é GERADO do contrato (P1-d): o app nunca
   # escreve HTTP à mão. Materializado por packages/lumbra_api_dart/generate.sh
   lumbra_api:

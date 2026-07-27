@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'features/system/connection_screen.dart';
+import 'core/session.dart';
+import 'features/auth/login_screen.dart';
+import 'features/home/home_screen.dart';
 
 void main() {
   // ProviderScope: a raiz do Riverpod (ADR-048). Todo estado do app vive
@@ -21,7 +23,25 @@ class LumbraApp extends StatelessWidget {
         colorSchemeSeed: const Color(0xFF6750A4),
         useMaterial3: true,
       ),
-      home: const ConnectionScreen(),
+      home: const _Raiz(),
     );
+  }
+}
+
+/// Decide a tela pela sessão: splash só na carga inicial do token; depois,
+/// Home se autenticado, Login caso contrário (inclusive se a leitura do
+/// token falhar).
+class _Raiz extends ConsumerWidget {
+  const _Raiz();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final sessao = ref.watch(sessionControllerProvider);
+    if (sessao.isLoading && !sessao.hasValue) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    return sessao.valueOrNull != null
+        ? const HomeScreen()
+        : const LoginScreen();
   }
 }
