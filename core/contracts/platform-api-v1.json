@@ -436,7 +436,9 @@
             "title": "Input"
           },
           "loc": {
-            "items": {},
+            "items": {
+              "type": "string"
+            },
             "title": "Location",
             "type": "array"
           },

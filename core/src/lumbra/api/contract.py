@@ -43,17 +43,23 @@ def _make_codegen_portable(schema: dict[str, Any]) -> dict[str, Any]:
     """Achata o ``anyOf:[string,integer]`` do ``loc`` do ValidationError.
 
     O ``loc`` (caminho do erro de validação) do FastAPI mistura strings e
-    índices inteiros. O gerador Dart produz código INVÁLIDO para ``anyOf``
-    de primitivos (uma classe ``ValidationErrorLocInner`` quebrada). Como
-    ``loc`` é um detalhe de erro que clientes não consomem tipado, mapeá-lo
-    para tipo livre (``{}`` = any) mantém o contrato honesto (segue aceitando
-    string ou inteiro) e portável para geração de cliente. É a única
-    concessão do contrato à realidade do codegen, e documentada.
+    índices inteiros (``anyOf:[string,integer]``). O gerador Dart não suporta
+    ``anyOf`` de primitivos: com o tipo composto ele quebra
+    (``ValidationErrorLocInner`` inválida); com tipo livre (``{}``) emite
+    ``Object.listFromJson``, que não existe. A única forma que o gerador
+    (de)serializa inline é uma lista de primitivo simples, então mapeamos
+    ``loc`` para ``list[string]``.
+
+    Concessão consciente e única do contrato ao codegen: ``loc`` é metadado
+    de erro que clientes não consomem tipado (é diagnóstico humano). O
+    cliente gerado passa a expô-lo como ``List<String>``; se um dia isso
+    importar, a saída é migrar para um gerador com suporte a ``oneOf`` (ex.:
+    dart-dio). Documentado aqui para não virar mistério.
     """
     try:
         loc = schema["components"]["schemas"]["ValidationError"]["properties"]["loc"]
         if isinstance(loc.get("items"), dict) and "anyOf" in loc["items"]:
-            loc["items"] = {}
+            loc["items"] = {"type": "string"}
     except (KeyError, TypeError):
         pass
     return schema

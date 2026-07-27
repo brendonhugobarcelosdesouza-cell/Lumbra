@@ -171,8 +171,13 @@ async def test_partitioned_order_preserved_under_concurrency(redis, reg, setting
         assert await _wait_until(lambda: sum(len(v) for v in vistos.values()) == 60, timeout=15.0)
         for doc, passos in vistos.items():
             assert passos == list(range(20)), f"ordem quebrada em {doc}"
-        # o dispatcher realmente distribuiu entre workers
-        assert bus.dispatcher_metrics("it-consumer").total_processed == 60
+        # o dispatcher distribuiu e processou o trabalho. >= 60 (não == 60):
+        # o Redis é at-least-once, então reentregas (reclaim) podem inflar a
+        # contagem do dispatcher; o dedup garante que o HANDLER só viu 60
+        # (checado acima em `vistos`), mas o dispatcher conta cada item que
+        # passou por ele. O piso de 60 é o que importa — todo o trabalho foi
+        # feito, com ordem preservada por chave.
+        assert bus.dispatcher_metrics("it-consumer").total_processed >= 60
     finally:
         await bus.stop()
 
