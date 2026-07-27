@@ -1,9 +1,8 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumbra_api/api.dart';
-import 'package:lumbra_app/core/api.dart';
 import 'package:lumbra_app/core/session.dart';
+import 'package:lumbra_app/features/chat/chat_providers.dart';
 import 'package:lumbra_app/main.dart';
 
 import 'session_test.dart';
@@ -24,9 +23,7 @@ void main() {
     expect(find.text('Criar uma conta'), findsOneWidget);
   });
 
-  testWidgets('com sessão, a raiz mostra a Home (lista de dispositivos)', (
-    tester,
-  ) async {
+  testWidgets('com sessão, a raiz mostra as conversas', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -35,15 +32,17 @@ void main() {
               const Session(accessToken: 'abc', refreshToken: 'ref'),
             ),
           ),
-          // sem rede: a Home recebe uma lista vazia de dispositivos
-          devicesListProvider.overrideWith((ref) async => const <DeviceResponse>[]),
+          // sem rede: a home recebe uma lista vazia de conversas
+          conversationsProvider.overrideWith(
+            (ref) async => const <ConversationOut>[],
+          ),
         ],
         child: const LumbraApp(),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Nenhum dispositivo pareado ainda.'), findsOneWidget);
-    expect(find.byIcon(Icons.logout), findsOneWidget);
+    expect(find.text('Nenhuma conversa ainda.'), findsOneWidget);
+    expect(find.text('Nova conversa'), findsOneWidget);
   });
 }

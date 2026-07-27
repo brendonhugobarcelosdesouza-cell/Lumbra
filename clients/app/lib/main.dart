@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/session.dart';
 import 'features/auth/login_screen.dart';
-import 'features/home/home_screen.dart';
+import 'features/chat/conversations_screen.dart';
 
 void main() {
   // ProviderScope: a raiz do Riverpod (ADR-048). Todo estado do app vive
@@ -41,7 +41,7 @@ class _Raiz extends ConsumerWidget {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     return sessao.valueOrNull != null
-        ? const HomeScreen()
+        ? const ConversationsScreen()
         : const LoginScreen();
   }
 }

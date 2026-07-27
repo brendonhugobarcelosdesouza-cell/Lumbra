@@ -7,8 +7,8 @@ import '../../core/session.dart';
 /// Primeira tela autenticada: lista os dispositivos do usuário (exige Bearer
 /// + escopo devices:read). Prova que a sessão flui ponta a ponta e liga na
 /// identidade do P1-b. As telas de chat/memória/documentos vêm aqui.
-class HomeScreen extends ConsumerWidget {
-  const HomeScreen({super.key});
+class DevicesScreen extends ConsumerWidget {
+  const DevicesScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
