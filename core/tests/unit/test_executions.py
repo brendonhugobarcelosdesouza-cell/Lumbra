@@ -85,6 +85,26 @@ class TestExecutions:
         assert done.duration_ms is not None
         assert tracker.history()[0].id == record.id
 
+    async def test_execucao_raiz_nao_tem_pai(self, kernel_tracker):
+        _kernel, tracker = kernel_tracker
+        record = tracker.start_skill("test.echo", {}, subject="dev", user_id=None)
+        await tracker.wait(record.id)
+        assert record.parent_execution_id is None
+
+    async def test_execucao_filha_herda_correlacao_do_pai(self, kernel_tracker):
+        """A0: a árvore de delegação compartilha um só correlation_id, e a
+        filha aponta para o pai (parent_execution_id)."""
+        _kernel, tracker = kernel_tracker
+        pai = tracker.start_skill("test.echo", {"text": "pai"}, subject="dev", user_id=None)
+        await tracker.wait(pai.id)
+        filha = tracker.start_skill(
+            "test.echo", {"text": "filha"}, subject="dev", user_id=None, parent_execution_id=pai.id
+        )
+        await tracker.wait(filha.id)
+        assert filha.parent_execution_id == pai.id
+        assert filha.correlation_id == pai.correlation_id  # árvore correlacionada
+        assert filha.id != pai.id
+
     async def test_failure_captures_traceback(self, kernel_tracker):
         _kernel, tracker = kernel_tracker
         record = tracker.start_skill("test.broken", {}, subject="dev", user_id=None)

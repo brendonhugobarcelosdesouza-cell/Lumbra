@@ -63,6 +63,11 @@ class ExecutionRecord(BaseModel):
     subject: str
     user_id: UUID | None
     correlation_id: UUID
+    # árvore de execução (base da delegação de agentes, A0): uma execução
+    # disparada por outra referencia o pai e HERDA seu correlation_id, para
+    # que a árvore inteira (orquestrador → agente → skill → agente delegado)
+    # seja rastreável por uma só correlação. Nulo = execução raiz.
+    parent_execution_id: UUID | None = None
     status: ExecutionStatus = ExecutionStatus.RUNNING
     output: dict[str, Any] | None = None
     error: str | None = None
@@ -124,7 +129,14 @@ class ExecutionTracker:
         subject: str,
         user_id: UUID | None,
         timeout_seconds: float | None = None,
+        parent_execution_id: UUID | None = None,
     ) -> ExecutionRecord:
+        # execução filha herda a correlação do pai — a árvore toda fica sob
+        # um só correlation_id (delegação rastreável); raiz ganha uma nova.
+        correlation_id = uuid7()
+        parent = self._by_id.get(parent_execution_id) if parent_execution_id else None
+        if parent is not None:
+            correlation_id = parent.correlation_id
         record = ExecutionRecord(
             id=uuid7(),
             kind="skill",
@@ -132,7 +144,8 @@ class ExecutionTracker:
             input=payload,
             subject=subject,
             user_id=user_id,
-            correlation_id=uuid7(),
+            correlation_id=correlation_id,
+            parent_execution_id=parent_execution_id,
         )
         # filho do token do kernel: desligar o processo cancela isto também
         token = self._kernel.cancellation.child(f"execution:{name}")
