@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumbra_api/api.dart';
 
@@ -364,7 +365,12 @@ class _BolhaView extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SelectableText(bolha.text),
+            // a resposta do assistente vem em Markdown; a do usuário e os
+            // erros são texto plano (não interpretar a entrada do usuário)
+            if (bolha.role == BubbleRole.assistant)
+              MarkdownBody(data: bolha.text, selectable: true)
+            else
+              SelectableText(bolha.text),
             if (bolha.usedCitations.isNotEmpty) ...[
               const SizedBox(height: 8),
               Wrap(

@@ -18,6 +18,10 @@ dependencies:
   # não modela text/event-stream, então o cliente gerado não serve para
   # streaming. Exceção nomeada e confinada a features/chat/chat_stream.dart.
   http: ^1.2.0
+  # renderiza a resposta do assistente em Markdown (negrito, listas, código,
+  # tabelas). Só na bolha do assistente; a do usuário é texto plano. API
+  # mínima e estável (MarkdownBody), compatível com Flutter >=3.19.
+  flutter_markdown: ^0.7.3
   # o cliente da Platform API é GERADO do contrato (P1-d): o app nunca
   # escreve HTTP à mão. Materializado por packages/lumbra_api_dart/generate.sh
   lumbra_api:
