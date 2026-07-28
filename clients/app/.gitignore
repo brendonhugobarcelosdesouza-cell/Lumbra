@@ -14,3 +14,9 @@ linux/
 macos/
 windows/
 web/
+
+# Ruido do `flutter create` / IDE (nao versionado — o app vive em lib/ e test/)
+.idea/
+.metadata
+*.iml
+README.md
