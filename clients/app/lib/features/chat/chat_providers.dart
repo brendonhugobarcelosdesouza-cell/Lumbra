@@ -38,13 +38,9 @@ final providersProvider = FutureProvider.autoDispose<List<ProviderChoice>>((
 ) async {
   final api = ref.watch(chatApiProvider);
   final res = await api.providersApiV1ChatProvidersGet();
-  final lista = (res?['providers'] as List?) ?? const [];
-  return lista.map((e) {
-    final m = e as Map;
-    return ProviderChoice(
-      name: m['name'] as String? ?? '?',
-      model: m['model'] as String? ?? '',
-      isLocal: m['is_local'] as bool? ?? true,
-    );
-  }).toList();
+  return (res?.providers ?? const [])
+      .map(
+        (p) => ProviderChoice(name: p.name, model: p.model, isLocal: p.isLocal),
+      )
+      .toList();
 });

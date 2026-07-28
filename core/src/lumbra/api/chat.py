@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from lumbra.adapters.security.tokens import Claims
 from lumbra.kernel.kernel import LumbraKernel
 from lumbra.modules.chat import ChatModule, StartOutput
-from lumbra.ports.ai import AIGatewayPort
+from lumbra.ports.ai import AIGatewayPort, ChatProviderInfo
 from lumbra.ports.attachments import BlobStorePort
 from lumbra.ports.conversations import ConversationNotFoundError, ConversationStorePort
 from lumbra.ports.skills import SkillContext, SkillError
@@ -95,6 +95,19 @@ class ConversationOut(BaseModel):
 
 class ConversationsOut(BaseModel):
     conversations: tuple[ConversationOut, ...] = ()
+
+
+class ProvidersOut(BaseModel):
+    """Cardápio de modelos (E2-04) tipado — antes: mapa livre, que o cliente
+    Dart não conseguia desserializar."""
+
+    providers: tuple[ChatProviderInfo, ...] = ()
+
+
+class SetPolicyResponse(BaseModel):
+    conversation_id: str
+    privacy: str
+    provider: str | None = None  # anulável => opcional (senão quebra o Dart)
 
 
 class StartBody(BaseModel):
@@ -189,14 +202,14 @@ def build_chat_router(
         result = await _run("chat.attachments", {"conversation_id": conversation_id}, claims)
         return dict(result.model_dump(mode="json"))
 
-    @router.get("/providers")
+    @router.get("/providers", response_model=ProvidersOut)
     async def providers(claims: authed) -> dict[str, Any]:
         """Cardápio de modelos para a interface (E2-04): nome, modelo,
         local ou cloud e preço por milhão de tokens."""
         del claims  # exige apenas autenticação
         return {"providers": [p.model_dump(mode="json") for p in kernel_gateway_providers()]}
 
-    @router.patch("/conversations/{conversation_id}/policy")
+    @router.patch("/conversations/{conversation_id}/policy", response_model=SetPolicyResponse)
     async def set_policy(conversation_id: str, body: PolicyBody, claims: authed) -> dict[str, Any]:
         result = await _run(
             "chat.set_policy", {"conversation_id": conversation_id, **body.model_dump()}, claims

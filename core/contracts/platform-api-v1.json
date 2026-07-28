@@ -160,6 +160,40 @@
         "title": "ChatMessageOut",
         "type": "object"
       },
+      "ChatProviderInfo": {
+        "description": "Descrição de um provedor de chat registrado — o cardápio que a\ninterface mostra quando o usuário escolhe o modelo da conversa (E2-04).",
+        "properties": {
+          "input_price_per_mtok": {
+            "title": "Input Price Per Mtok",
+            "type": "number"
+          },
+          "is_local": {
+            "title": "Is Local",
+            "type": "boolean"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "output_price_per_mtok": {
+            "title": "Output Price Per Mtok",
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "model",
+          "is_local",
+          "input_price_per_mtok",
+          "output_price_per_mtok"
+        ],
+        "title": "ChatProviderInfo",
+        "type": "object"
+      },
       "CitationOut": {
         "description": "Fonte citada numa resposta — espelha o Citation do domínio em tipos\nJSON. Modelo da API (contrato), separado da saída interna da skill.",
         "properties": {
@@ -479,6 +513,21 @@
         "title": "PolicyBody",
         "type": "object"
       },
+      "ProvidersOut": {
+        "description": "Cardápio de modelos (E2-04) tipado — antes: mapa livre, que o cliente\nDart não conseguia desserializar.",
+        "properties": {
+          "providers": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ChatProviderInfo"
+            },
+            "title": "Providers",
+            "type": "array"
+          }
+        },
+        "title": "ProvidersOut",
+        "type": "object"
+      },
       "RefreshRequest": {
         "properties": {
           "refresh_token": {
@@ -640,6 +689,35 @@
           "tokens_out"
         ],
         "title": "SendResponse",
+        "type": "object"
+      },
+      "SetPolicyResponse": {
+        "properties": {
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "privacy": {
+            "title": "Privacy",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "privacy"
+        ],
+        "title": "SetPolicyResponse",
         "type": "object"
       },
       "StartBody": {
@@ -1349,9 +1427,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Set Policy Api V1 Chat Conversations  Conversation Id  Policy Patch",
-                  "type": "object"
+                  "$ref": "#/components/schemas/SetPolicyResponse"
                 }
               }
             },
@@ -1388,9 +1464,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Providers Api V1 Chat Providers Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ProvidersOut"
                 }
               }
             },
