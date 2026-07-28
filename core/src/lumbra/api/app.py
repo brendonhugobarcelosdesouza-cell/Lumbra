@@ -142,6 +142,23 @@ def create_app(
                 return {"skills": []}
             return {"skills": kernel.capability_catalog()}
 
+    # CORS: clientes web (Flutter web, ADR-043) rodam num origin diferente do
+    # Nó, e o navegador bloqueia a chamada sem estes cabeçalhos. Adicionado por
+    # ÚLTIMO para ser a camada mais externa (trata o preflight OPTIONS). O app
+    # autentica por Bearer no header (não cookie), então não precisamos de
+    # credenciais e podemos liberar origins amplamente fora de produção. Em
+    # produção, só os origins explicitamente configurados.
+    origins = ["*"] if not cfg.is_production else list(cfg.security.cors_allow_origins)
+    if origins:
+        from fastapi.middleware.cors import CORSMiddleware
+
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
     log.info(
         "app_created",
         environment=cfg.environment,

@@ -56,6 +56,10 @@ class SecuritySettings(BaseModel):
     jwt_algorithm: str = "HS256"
     access_token_ttl_seconds: int = Field(default=900, ge=60)  # 15 min
     refresh_token_ttl_seconds: int = Field(default=1_209_600, ge=3600)  # 14 dias
+    # origins autorizados a chamar a API de um navegador (CORS). Fora de
+    # produção, o Nó libera "*" automaticamente; em produção, só o que
+    # estiver aqui (ex.: LUMBRA_SECURITY__CORS_ALLOW_ORIGINS=["https://app…"]).
+    cors_allow_origins: tuple[str, ...] = ()
 
 
 class AISettings(BaseModel):
