@@ -264,3 +264,29 @@ que a estrutura tornou separável.
 Priorizar #5 e #6 conforme o quanto atrapalharem o uso diário. Ambos
 afetam qualidade de recall, que é o coração da plataforma — mas só o uso
 continuado dirá se são incômodos frequentes ou casos de borda.
+
+## Entregue nesta leva (RAG + contrato + UX)
+
+* **#10 (chunking ciente de estrutura) — ✅** ADR-051. Extração estruturada
+  (blocos tipados) + chunker que faz de cada linha de tabela uma unidade
+  autodescritiva. Provado no golden set (`answer_cases`), a fatura
+  recuperada nos dois sentidos.
+* **#11 (guardrail) — ✅ fortalecido** ADR-052. Agora dirigido pela
+  evidência rotulada que a estrutura coloca no contexto, não por confiança
+  inventada.
+* **Contrato (API First) — ✅** anexos, cancelamento e memória tipados
+  (fim do mapa livre que quebrava o cliente Dart). Dev-console tipada nas
+  rotas estáveis; segue fora do contrato versionado (P1-b.1).
+* **UX do chat — ✅** Markdown na resposta, chips só das fontes citadas,
+  título automático na primeira pergunta.
+
+## Evoluções registradas (não bloqueiam)
+
+* Levar o `section_path` também à prosa do bloco de CONTEXTO (hoje só as
+  tabelas rotulam explícito; a prosa carrega a seção no metadado, mas não
+  renderizada) — se o dogfooding mostrar ambiguidade fora de tabelas.
+* Reindexação em lote dos documentos já indexados, para preencherem os
+  blocos e o metadado estrutural novos (chunks legados coexistem nulos,
+  tratados como sem seção — sem regressão, mas sem o ganho até reindexar).
+* Fixar o `pubspec.lock` do app com o `flutter_markdown` resolvido, para
+  build reprodutível (o CI resolve, mas o lock versionado fica em dia).

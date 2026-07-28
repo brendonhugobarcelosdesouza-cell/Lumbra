@@ -14,7 +14,7 @@
 | Consolidação 1 | Auditoria: código morto, duplicação, segurança, performance, cobertura | ✅ |
 | Leva 3 | DX e instalação limpa: CLI `lumbra`, System Health, First Run Wizard (ADR-037) | ✅ |
 | Leva 2 | Event Bus de produção: concorrência particionada, resiliência, observabilidade, carga (ADRs 038–041) | ✅ |
-| CI | 5 jobs verdes: quality, tests, windows, integration (com portão de cobertura da suíte inteira), docker | ✅ |
+| CI | 7 jobs verdes: quality, tests, windows, integration (portão de cobertura + golden set de RAG), dart-client (cliente gerado do contrato), flutter-app, docker | ✅ |
 | Dogfooding | Backlog estruturado (docs/22) + Corpus de Avaliação (docs/23), fatura como benchmark permanente | 🔄 contínuo |
 
 Essa fundação foi declarada **suficientemente madura** em 2026-07-24. A
@@ -124,10 +124,15 @@ jamais tornar a nuvem obrigatória.
 ## Trilhas contínuas (não são épicos, não param)
 
 * **Dogfooding + corpus:** issues em docs/22, corpus de avaliação em
-  docs/23 crescendo em variedade; chunking ciente de estrutura (#10) entra
-  quando o corpus for representativo — decisão guiada por muitos casos.
-* **Qualidade:** golden set de RAG, portão de cobertura da suíte inteira,
-  baseline de performance como instrumento (ADR-041).
+  docs/23 crescendo em variedade. Chunking ciente de estrutura (#10) e
+  guardrail por evidência (#11) **entregues** (ADR-051/052): a fatura é
+  recuperada corretamente e provada no golden set. Evoluções registradas:
+  levar o `section_path` também à prosa do contexto (hoje só as tabelas
+  rotulam explícito), e reindexação em lote dos documentos já indexados
+  para preencherem blocos/metadados novos (chunks legados coexistem nulos).
+* **Qualidade:** golden set de RAG (agora com `answer_cases` de nível-chunk
+  travando o #10), portão de cobertura da suíte inteira, baseline de
+  performance como instrumento (ADR-041).
 * **iOS:** o código Flutter já o cobre; o alvo espera conta Apple
   Developer + máquina macOS fazerem sentido (dispositivo do autor é
   Android — decisão registrada, não esquecida).
