@@ -20,6 +20,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 
 from lumbra.adapters.ai.fastembed_local import FastEmbedProvider
 from lumbra.adapters.ai.gateway import AIGateway
@@ -32,6 +33,7 @@ from lumbra.adapters.knowledge.postgres import PostgresKnowledgeGraph
 from lumbra.adapters.metadata.regex_extractors import default_extractors
 from lumbra.adapters.metrics.in_memory import InMemoryMetrics
 from lumbra.adapters.permissions.static import StaticPermissionAdapter
+from lumbra.adapters.persistence.models import ChunkModel
 from lumbra.adapters.search.postgres import PostgresSearch
 from lumbra.adapters.users.postgres import PostgresUserStore
 from lumbra.context.providers import _diversify
@@ -122,12 +124,14 @@ def _texto_hit(hit: dict) -> str:
     return re.sub(r"\*\*", "", hit.get("snippet") or "")
 
 
-def _rank_contendo(hits: list[dict], valor: str) -> int | None:
-    """Posição (1-based) do primeiro trecho que contém ``valor``."""
-    for i, hit in enumerate(hits, 1):
-        if valor in _texto_hit(hit):
-            return i
-    return None
+def _diag_hits(caso: dict, hits: list[dict], textos: dict[str, str]) -> str:
+    """Relatório do top-8 recuperado, para o log do CI quando um caso falha."""
+    topo = "\n".join(
+        f"      #{i} {h['uri'].rsplit('/', 1)[-1]}: "
+        f"{textos.get(str(h['chunk_id']), _texto_hit(h))[:90]!r}"
+        for i, h in enumerate(hits[:8], 1)
+    )
+    return f"    query={caso['query']!r} answer={caso['answer']!r}\n{topo}"
 
 
 async def _indexar_corpus(kernel, user, tmp_path: Path) -> SkillContext:
@@ -173,7 +177,7 @@ class TestRAGGoldenSet:
         assert recall_at_3 >= thresholds["recall_at_3"], f"recall@3 regrediu: {summary}\n{report}"
         assert mrr >= thresholds["mrr"], f"MRR regrediu: {summary}\n{report}"
 
-    async def test_answer_cases_recuperam_o_valor_certo(self, stack, tmp_path: Path):
+    async def test_answer_cases_recuperam_o_valor_certo(self, stack, tmp_path: Path, db):
         """Nível de chunk (issue #10): sobre documentos densos com vários
         valores parecidos, o trecho com o valor CERTO precisa ser recuperado
         acima dos concorrentes e sobreviver à montagem do contexto.
@@ -182,43 +186,67 @@ class TestRAGGoldenSet:
         (1) o valor certo é recuperado; (2) NÃO fica abaixo de um valor
         concorrente (o bug do #10); (3) chega ao contexto que o modelo veria
         (após o mesmo _diversify do produto: 8 vagas, teto 3 por documento).
+
+        O casamento usa o TEXTO REAL do chunk (não o snippet do ts_headline),
+        para separar 'chunk não recuperado' de 'snippet não mostrou o valor'.
         """
         kernel, user = stack
         golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
         ctx = await _indexar_corpus(kernel, user, tmp_path)
 
+        # mapa chunk_id -> texto indexado (a fonte de verdade do que foi recuperado)
+        async with db.session() as session:
+            textos = {
+                str(cid): txt
+                for cid, txt in (
+                    await session.execute(select(ChunkModel.id, ChunkModel.text))
+                ).all()
+            }
+
+        def _rank(hits: list[dict], valor: str) -> int | None:
+            for i, hit in enumerate(hits, 1):
+                if valor in textos.get(str(hit["chunk_id"]), _texto_hit(hit)):
+                    return i
+            return None
+
         linhas: list[str] = []
+        problemas: list[str] = []
         ranks: list[int | None] = []
         for caso in golden["answer_cases"]:
             found = await kernel.skills.execute(
                 "document.find", {"query": caso["query"], "limit": 20}, context=ctx
             )
             hits = list(found.hits)  # type: ignore[attr-defined]
-            rank_ok = _rank_contendo(hits, caso["answer"])
+            rank_ok = _rank(hits, caso["answer"])
             ranks.append(rank_ok)
+            linhas.append(f"  rank={rank_ok} {caso['query']!r} -> {caso['answer']}")
 
             # (1) o valor certo foi recuperado
-            assert rank_ok is not None, (
-                f"valor {caso['answer']!r} não recuperado para {caso['query']!r}"
-            )
+            if rank_ok is None:
+                problemas.append(
+                    f"[não recuperado] {caso['answer']}\n{_diag_hits(caso, hits, textos)}"
+                )
+                continue
             # (2) o bug do #10: o valor certo não pode ficar ABAIXO de um concorrente
             for distrator in caso["distractors"]:
-                rank_dist = _rank_contendo(hits, distrator)
-                assert rank_dist is None or rank_ok <= rank_dist, (
-                    f"#10: {distrator!r} (rank {rank_dist}) veio acima do valor certo "
-                    f"{caso['answer']!r} (rank {rank_ok}) em {caso['query']!r}"
-                )
+                rank_dist = _rank(hits, distrator)
+                if rank_dist is not None and rank_ok > rank_dist:
+                    problemas.append(
+                        f"[#10 ordem] {distrator} (rank {rank_dist}) acima de "
+                        f"{caso['answer']} (rank {rank_ok})\n{_diag_hits(caso, hits, textos)}"
+                    )
             # (3) o valor certo chega ao contexto (mesma diversificação do produto)
             contexto = _diversify(hits, limite=8, por_documento=3)
-            assert any(caso["answer"] in _texto_hit(h) for h in contexto), (
-                f"valor {caso['answer']!r} não sobreviveu ao contexto em {caso['query']!r}"
-            )
-            linhas.append(f"  rank={rank_ok} {caso['query']!r} -> {caso['answer']}")
+            if not any(caso["answer"] in textos.get(str(h["chunk_id"]), "") for h in contexto):
+                problemas.append(
+                    f"[fora do contexto] {caso['answer']}\n{_diag_hits(caso, hits, textos)}"
+                )
 
         total = len(ranks)
         recall_at_1 = sum(1 for r in ranks if r == 1) / total
         recall_at_3 = sum(1 for r in ranks if r is not None and r <= 3) / total
         mrr = sum(1.0 / r for r in ranks if r is not None) / total
+        assert not problemas, "casos de resposta falharam:\n" + "\n".join(problemas)
         print(  # noqa: T201 — relatório do CI
             f"\nRAG answer cases (#10): recall@1={recall_at_1:.2f} "
             f"recall@3={recall_at_3:.2f} mrr={mrr:.3f} (n={total})\n" + "\n".join(linhas)
