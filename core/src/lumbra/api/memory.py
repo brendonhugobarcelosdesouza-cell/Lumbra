@@ -25,6 +25,59 @@ class RememberBody(BaseModel):
     expires_in_hours: float | None = None
 
 
+class MemoryItemOut(BaseModel):
+    """Uma memória listada — espelha o MemoryItem do domínio em tipos JSON."""
+
+    id: str
+    user_id: str
+    kind: str
+    content: str
+    importance: float
+    source_ref: dict[str, Any] = Field(default_factory=dict)
+    access_count: int
+    expires_at: str | None = None
+    last_accessed_at: str
+    created_at: str
+    archived_at: str | None = None
+
+
+class MemoryHitOut(BaseModel):
+    """Um resultado de recall (memory.search) com explicação."""
+
+    memory_id: str
+    kind: str
+    content: str
+    score: float
+    similarity: float
+    source_ref: dict[str, Any] = Field(default_factory=dict)
+    explanation: str
+
+
+class MemoryQueryOut(BaseModel):
+    """GET /memory: lista (sem query) OU recall (com query). Envelope único
+    com campos opcionais — o cliente tipado não lida com união de esquemas."""
+
+    items: tuple[MemoryItemOut, ...] = ()
+    mode: str | None = None
+    hits: tuple[MemoryHitOut, ...] = ()
+
+
+class RememberOut(BaseModel):
+    memory_id: str
+    kind: str
+    embedded: bool
+
+
+class ForgetOut(BaseModel):
+    forgotten: bool
+
+
+class ConsolidateOut(BaseModel):
+    expired: int
+    archived: int
+    kept: int
+
+
 def build_memory_router(
     kernel: LumbraKernel,
     store: MemoryStorePort,
@@ -46,7 +99,7 @@ def build_memory_router(
         except (SkillError, ValueError) as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from None
 
-    @router.get("")
+    @router.get("", response_model=MemoryQueryOut)
     async def list_memories(
         claims: authed, kind: str | None = None, query: str | None = None, limit: int = 20
     ) -> dict[str, Any]:
@@ -57,17 +110,17 @@ def build_memory_router(
         items = await store.list_by_user(claims.subject, kind=kind)
         return {"items": [i.model_dump(mode="json") for i in items[:limit]]}
 
-    @router.post("", status_code=status.HTTP_201_CREATED)
+    @router.post("", status_code=status.HTTP_201_CREATED, response_model=RememberOut)
     async def remember(body: RememberBody, claims: authed) -> dict[str, Any]:
         result = await _run("memory.remember", body.model_dump(), claims)
         return dict(result.model_dump(mode="json"))
 
-    @router.delete("/{memory_id}")
+    @router.delete("/{memory_id}", response_model=ForgetOut)
     async def forget(memory_id: str, claims: authed) -> dict[str, Any]:
         result = await _run("memory.forget", {"memory_id": memory_id}, claims)
         return dict(result.model_dump(mode="json"))
 
-    @router.post("/consolidate")
+    @router.post("/consolidate", response_model=ConsolidateOut)
     async def consolidate(claims: authed) -> dict[str, Any]:
         result = await _run("memory.consolidate", {}, claims)
         return dict(result.model_dump(mode="json"))

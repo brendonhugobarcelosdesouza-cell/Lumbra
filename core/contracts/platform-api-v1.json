@@ -440,6 +440,29 @@
         "title": "CitationOut",
         "type": "object"
       },
+      "ConsolidateOut": {
+        "properties": {
+          "archived": {
+            "title": "Archived",
+            "type": "integer"
+          },
+          "expired": {
+            "title": "Expired",
+            "type": "integer"
+          },
+          "kept": {
+            "title": "Kept",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expired",
+          "archived",
+          "kept"
+        ],
+        "title": "ConsolidateOut",
+        "type": "object"
+      },
       "ConversationOut": {
         "description": "Conversa no contrato tipado (antes: dict solto na listagem).",
         "properties": {
@@ -636,6 +659,19 @@
         "title": "DeviceState",
         "type": "string"
       },
+      "ForgetOut": {
+        "properties": {
+          "forgotten": {
+            "title": "Forgotten",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "forgotten"
+        ],
+        "title": "ForgetOut",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -661,6 +697,160 @@
           }
         },
         "title": "HistoryResponse",
+        "type": "object"
+      },
+      "MemoryHitOut": {
+        "description": "Um resultado de recall (memory.search) com explicação.",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "memory_id": {
+            "title": "Memory Id",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "similarity": {
+            "title": "Similarity",
+            "type": "number"
+          },
+          "source_ref": {
+            "additionalProperties": true,
+            "title": "Source Ref",
+            "type": "object"
+          }
+        },
+        "required": [
+          "memory_id",
+          "kind",
+          "content",
+          "score",
+          "similarity",
+          "explanation"
+        ],
+        "title": "MemoryHitOut",
+        "type": "object"
+      },
+      "MemoryItemOut": {
+        "description": "Uma memória listada — espelha o MemoryItem do domínio em tipos JSON.",
+        "properties": {
+          "access_count": {
+            "title": "Access Count",
+            "type": "integer"
+          },
+          "archived_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "importance": {
+            "title": "Importance",
+            "type": "number"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "last_accessed_at": {
+            "title": "Last Accessed At",
+            "type": "string"
+          },
+          "source_ref": {
+            "additionalProperties": true,
+            "title": "Source Ref",
+            "type": "object"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "kind",
+          "content",
+          "importance",
+          "access_count",
+          "last_accessed_at",
+          "created_at"
+        ],
+        "title": "MemoryItemOut",
+        "type": "object"
+      },
+      "MemoryQueryOut": {
+        "description": "GET /memory: lista (sem query) OU recall (com query). Envelope único\ncom campos opcionais — o cliente tipado não lida com união de esquemas.",
+        "properties": {
+          "hits": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MemoryHitOut"
+            },
+            "title": "Hits",
+            "type": "array"
+          },
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MemoryItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          }
+        },
+        "title": "MemoryQueryOut",
         "type": "object"
       },
       "PolicyBody": {
@@ -800,6 +990,29 @@
           "content"
         ],
         "title": "RememberBody",
+        "type": "object"
+      },
+      "RememberOut": {
+        "properties": {
+          "embedded": {
+            "title": "Embedded",
+            "type": "boolean"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "memory_id": {
+            "title": "Memory Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "memory_id",
+          "kind",
+          "embedded"
+        ],
+        "title": "RememberOut",
         "type": "object"
       },
       "SendBody": {
@@ -1947,9 +2160,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response List Memories Api V1 Memory Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/MemoryQueryOut"
                 }
               }
             },
@@ -1993,9 +2204,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Remember Api V1 Memory Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/RememberOut"
                 }
               }
             },
@@ -2031,9 +2240,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Consolidate Api V1 Memory Consolidate Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ConsolidateOut"
                 }
               }
             },
@@ -2070,9 +2277,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Forget Api V1 Memory  Memory Id  Delete",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ForgetOut"
                 }
               }
             },
