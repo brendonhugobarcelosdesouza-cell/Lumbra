@@ -1,13 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumbra_api/api.dart';
 
+import '../../core/api.dart';
+import '../../core/session.dart';
 import 'chat_models.dart';
 import 'chat_providers.dart';
+import 'chat_stream.dart';
 
-/// A conversa: histórico + envio. Sem streaming ainda (P2-c.2) — a resposta
-/// aparece inteira quando o Nó termina. As citações vêm numeradas e
-/// clicáveis, provando o RAG ponta a ponta.
+/// A conversa: histórico + envio com STREAMING (P2-c.2). A resposta aparece
+/// token a token; as fontes chegam antes do texto e viram chips clicáveis.
+/// "Parar" cancela a geração (fecha a conexão — o Nó libera a GPU).
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({super.key, required this.conversationId, this.title});
 
@@ -26,6 +31,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   bool _enviando = false;
   String? _erroCarga;
 
+  StreamSubscription<ChatStreamEvent>? _sub;
+  String? _parcial; // texto do assistente em construção (null = sem stream)
+  List<CitationOut> _parciaisCitacoes = const [];
+
   @override
   void initState() {
     super.initState();
@@ -34,6 +43,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   @override
   void dispose() {
+    _sub?.cancel();
     _campo.dispose();
     _scroll.dispose();
     super.dispose();
@@ -63,36 +73,78 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
-  Future<void> _enviar() async {
+  void _enviar() {
     final texto = _campo.text.trim();
     if (texto.isEmpty || _enviando) return;
     _campo.clear();
+    final token = ref.read(sessionControllerProvider).valueOrNull?.accessToken;
     setState(() {
       _bolhas = [..._bolhas, ChatBubble.user(texto)];
+      _parcial = '';
+      _parciaisCitacoes = const [];
       _enviando = true;
     });
     _rolarAoFim();
-    try {
-      final api = ref.read(chatApiProvider);
-      final resp = await api
-          .sendApiV1ChatConversationsConversationIdMessagesPost(
-            widget.conversationId,
-            SendBody(content: texto),
-          );
-      if (!mounted) return;
-      setState(() {
-        if (resp != null) _bolhas = [..._bolhas, ChatBubble.fromResponse(resp)];
-        _enviando = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _bolhas = [..._bolhas, ChatBubble.error('Falha ao responder: $e')];
-        _enviando = false;
-      });
-    }
+    _sub =
+        streamChat(
+          baseUrl: noBaseUrl,
+          token: token,
+          conversationId: widget.conversationId,
+          content: texto,
+        ).listen(
+          _aoEvento,
+          onError: (Object e) {
+            if (!mounted) return;
+            setState(() {
+              _bolhas = [..._bolhas, ChatBubble.error('Falha ao responder: $e')];
+              _limparStream();
+            });
+          },
+          onDone: () {
+            if (!mounted || _parcial == null) return;
+            setState(_finalizar);
+          },
+        );
+  }
+
+  void _aoEvento(ChatStreamEvent ev) {
+    if (!mounted) return;
+    setState(() {
+      if (ev is TokenEvent) {
+        _parcial = (_parcial ?? '') + ev.delta;
+      } else if (ev is SourcesEvent) {
+        _parciaisCitacoes = ev.citations;
+      } else if (ev is DoneEvent || ev is CancelledEvent) {
+        _finalizar();
+      } else if (ev is StreamErrorEvent) {
+        _bolhas = [..._bolhas, ChatBubble.error(ev.detail)];
+        _limparStream();
+      }
+    });
     _rolarAoFim();
   }
+
+  /// Fixa o texto acumulado como bolha final. Chamado dentro de setState.
+  void _finalizar() {
+    final texto = _parcial;
+    if (texto != null && texto.isNotEmpty) {
+      _bolhas = [
+        ..._bolhas,
+        ChatBubble(BubbleRole.assistant, texto, citations: _parciaisCitacoes),
+      ];
+    }
+    _limparStream();
+  }
+
+  void _limparStream() {
+    _parcial = null;
+    _parciaisCitacoes = const [];
+    _enviando = false;
+    _sub?.cancel();
+    _sub = null;
+  }
+
+  void _parar() => setState(_finalizar);
 
   void _rolarAoFim() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -109,7 +161,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       body: Column(
         children: [
           Expanded(child: _corpo()),
-          if (_enviando) const LinearProgressIndicator(),
           const Divider(height: 1),
           _entrada(),
         ],
@@ -127,14 +178,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ),
       );
     }
-    if (_bolhas.isEmpty) {
+    // bolha viva do stream (se houver) entra no fim da lista
+    final vivas = <ChatBubble>[
+      ..._bolhas,
+      if (_parcial != null)
+        ChatBubble(
+          BubbleRole.assistant,
+          _parcial!.isEmpty ? '…' : _parcial!,
+          citations: _parciaisCitacoes,
+        ),
+    ];
+    if (vivas.isEmpty) {
       return const Center(child: Text('Faça a primeira pergunta.'));
     }
     return ListView.builder(
       controller: _scroll,
       padding: const EdgeInsets.all(12),
-      itemCount: _bolhas.length,
-      itemBuilder: (_, i) => _BolhaView(_bolhas[i]),
+      itemCount: vivas.length,
+      itemBuilder: (_, i) => _BolhaView(vivas[i]),
     );
   }
 
@@ -158,10 +219,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          IconButton.filled(
-            onPressed: _enviando ? null : _enviar,
-            icon: const Icon(Icons.send),
-          ),
+          if (_enviando)
+            IconButton.filledTonal(
+              tooltip: 'Parar',
+              onPressed: _parar,
+              icon: const Icon(Icons.stop),
+            )
+          else
+            IconButton.filled(
+              tooltip: 'Enviar',
+              onPressed: _enviar,
+              icon: const Icon(Icons.send),
+            ),
         ],
       ),
     );
