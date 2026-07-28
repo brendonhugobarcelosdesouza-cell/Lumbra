@@ -19,11 +19,14 @@ from typing import Any
 from pydantic import ValidationError
 
 from lumbra.kernel.events import SkillExecuted, SkillFailed, SkillRegistered
+from lumbra.ports.approval import ApprovalPolicyPort, ApprovalRequest
 from lumbra.ports.explain import ExplainPort, Explanation
 from lumbra.ports.permissions import PermissionPort
 from lumbra.ports.skills import (
     DuplicateSkillError,
+    RiskLevel,
     Skill,
+    SkillApprovalRequiredError,
     SkillContext,
     SkillManifest,
     SkillNotFoundError,
@@ -44,10 +47,12 @@ class SkillRegistry:
         permissions: PermissionPort,
         publish: PublishFn | None = None,
         explain: ExplainPort | None = None,
+        approval: ApprovalPolicyPort | None = None,
     ) -> None:
         self._permissions = permissions
         self._publish = publish
         self._explain = explain
+        self._approval = approval  # None = sem gate (compat); o kernel injeta o default
         self._skills: dict[str, Skill] = {}
 
     # ------------------------------------------------------------ registro
@@ -126,6 +131,28 @@ class SkillRegistry:
             )
             if not allowed:
                 raise SkillPermissionDeniedError(name, context.subject, scope)
+
+        # Human-in-the-Loop (ADR-024): ação de risco >= MEDIUM passa pela
+        # política de aprovação ANTES de executar. O sujeito TEM o escopo; o
+        # que se decide aqui é se a ação de impacto pode ser automática.
+        if self._approval is not None and manifest.risk_level is not RiskLevel.LOW:
+            outcome = await self._approval.decide(
+                ApprovalRequest(
+                    action=name,
+                    subject=context.subject,
+                    risk_level=manifest.risk_level,
+                    reason=f"execução solicitada por {context.subject}",
+                )
+            )
+            _log.info(
+                "approval_checked",
+                skill=name,
+                subject=context.subject,
+                risk=manifest.risk_level.value,
+                decision=outcome.decision.value,
+            )
+            if not outcome.allowed:
+                raise SkillApprovalRequiredError(name, context.subject, outcome.decision.value)
 
         try:
             validated = skill.input_model.model_validate(dict(payload))

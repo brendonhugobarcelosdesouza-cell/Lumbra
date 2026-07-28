@@ -69,6 +69,17 @@ class SkillPermissionDeniedError(SkillError):
         self.scope = scope
 
 
+class SkillApprovalRequiredError(SkillError):
+    """Ação de risco (>= MEDIUM) barrada pela política de aprovação (ADR-024).
+
+    Distinta de permissão: o sujeito TEM o escopo, mas a ação precisa de
+    confirmação humana (Human-in-the-Loop) que a política ainda não deu."""
+
+    def __init__(self, name: str, subject: str, decision: str) -> None:
+        super().__init__(f"Aprovação necessária para {name!r} (sujeito {subject!r}): {decision}")
+        self.decision = decision
+
+
 class SkillManifest(BaseModel):
     """Declaração pública de uma capacidade — o que o discovery enxerga."""
 

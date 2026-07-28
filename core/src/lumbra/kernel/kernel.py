@@ -23,11 +23,13 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 from lumbra.domain.events import EventPayload, EventRegistry
+from lumbra.kernel.approval import AutoApprovePolicy
 from lumbra.kernel.context_engine import ContextEngine
 from lumbra.kernel.events import KernelStarted, KernelStopped, ModuleStarted, register_kernel_events
 from lumbra.kernel.explain import ExplainEngine
 from lumbra.kernel.planning import KeywordPlanner, PlanRunner
 from lumbra.kernel.skill_registry import SkillRegistry
+from lumbra.ports.approval import ApprovalPolicyPort
 from lumbra.ports.event_bus import EventBusPort
 from lumbra.ports.event_store import EventStorePort
 from lumbra.ports.permissions import PermissionPort
@@ -94,6 +96,7 @@ class LumbraKernel:
         event_store: EventStorePort,
         permissions: PermissionPort,
         planner: PlannerPort | None = None,
+        approval: ApprovalPolicyPort | None = None,
         producer: str = "lumbra-kernel@0.1.0",
     ) -> None:
         self.events = events
@@ -101,9 +104,14 @@ class LumbraKernel:
         self.event_store = event_store
         self.permissions = permissions
         self.planner: PlannerPort = planner or KeywordPlanner()
+        # HITL (ADR-024): default 'aprova tudo' — liga o gate sem quebrar nada
+        # enquanto não há tela de confirmação. Trocar a política é injeção.
+        self.approval: ApprovalPolicyPort = approval or AutoApprovePolicy()
         self.context = ContextEngine()
         self.explain = ExplainEngine()
-        self.skills = SkillRegistry(permissions, publish=self.publish, explain=self.explain)
+        self.skills = SkillRegistry(
+            permissions, publish=self.publish, explain=self.explain, approval=self.approval
+        )
         self.plan_runner = PlanRunner(self.skills)
         self._producer = producer
         self._modules: dict[str, LumbraModule] = {}
