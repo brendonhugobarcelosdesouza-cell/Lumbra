@@ -191,6 +191,57 @@ def _nivel_de_estilo(estilo: str) -> int | None:
 # --------------------------------------------------------------------------- #
 # PDF — tabelas por página + prosa fora das tabelas (sem duplicar)             #
 # --------------------------------------------------------------------------- #
+# Valor monetário no formato brasileiro (R$ 7.016,60), com R$ e espaço opcionais.
+_VALOR_MONETARIO = re.compile(r"R?\$?\s?\d{1,3}(?:\.\d{3})*,\d{2}(?!\d)")
+
+# Conectivos do português que colam entre palavras e raramente aparecem
+# sozinhos numa fatura — completam o vocabulário do próprio documento para
+# desfazer colagens do tipo "Totaldestafatura" → "Total desta fatura".
+_PT_CONECTIVOS = frozenset({
+    "de", "da", "do", "das", "dos", "desta", "deste", "destas", "destes",
+    "dessa", "desse", "dessas", "desses", "na", "no", "nas", "nos", "em",
+    "e", "a", "o", "as", "os", "ao", "aos", "com", "por", "para",
+    "sua", "seu", "suas", "seus",
+})  # fmt: skip
+_PALAVRA_PT = re.compile(r"[A-Za-zÀ-ÿ]{2,}")
+_MIN_COLAGEM = 12  # só tenta descolar tokens longos (palavra PT real raramente passa)
+
+
+def _vocabulario(texto: str) -> set[str]:
+    """Palavras (minúsculas) que o documento escreveu SEPARADAS — a base para
+    descolar as que vieram grudadas na mesma página.
+
+    Exclui tokens longos (> 15): as próprias COLAGENS ("totaldestafatura") são
+    longas, e se entrassem no vocabulário se considerariam 'palavras conhecidas'
+    e nunca seriam divididas. Palavras reais do PT quase todas cabem em 15."""
+    curtas = {t.lower() for t in _PALAVRA_PT.findall(texto) if len(t) <= 15}
+    return curtas | _PT_CONECTIVOS
+
+
+def _descolar_token(token: str, vocab: set[str]) -> str:
+    """Segmenta um token grudado em palavras conhecidas (maior prefixo primeiro).
+    Só divide se TODO o token se decompõe em palavras do vocabulário — senão
+    devolve intacto (não arrisca partir uma palavra real longa)."""
+    if len(token) <= _MIN_COLAGEM or token.lower() in vocab:
+        return token
+    partes: list[str] = []
+    i = 0
+    while i < len(token):
+        corte = next(
+            (j for j in range(len(token), i + 1, -1) if token[i:j].lower() in vocab),
+            None,
+        )
+        if corte is None:
+            return token  # não segmentou: mantém original (seguro)
+        partes.append(token[i:corte])
+        i = corte
+    return " ".join(partes) if len(partes) > 1 else token
+
+
+def _descolar_linha(linha: str, vocab: set[str]) -> str:
+    return " ".join(_descolar_token(tok, vocab) if tok.isalpha() else tok for tok in linha.split())
+
+
 def _pdf_blocks(raw: bytes) -> list[Block]:
     try:
         import pdfplumber
@@ -200,25 +251,87 @@ def _pdf_blocks(raw: bytes) -> list[Block]:
     blocos: list[Block] = []
     with pdfplumber.open(io.BytesIO(raw)) as pdf:
         for numero, pagina in enumerate(pdf.pages, 1):
-            tabelas = pagina.find_tables()
-            bboxes = [t.bbox for t in tabelas]
-            for tabela in tabelas:
-                dados = tabela.extract()
-                rows = tuple(tuple((c or "").strip() for c in linha) for linha in dados)
-                if any(any(c for c in row) for row in rows):
-                    blocos.append(
-                        Block(
-                            type=BlockType.TABLE,
-                            rows=rows,
-                            text=render_rows(rows),
-                            page=numero,
-                        )
-                    )
-            # prosa = texto FORA das áreas de tabela (evita duplicar a tabela)
-            fonte = pagina.filter(_fora_das_tabelas(bboxes)) if bboxes else pagina
-            for paragrafo in _paragrafos(_melhor_texto(fonte)):
-                blocos.append(Block(type=BlockType.PARAGRAPH, text=paragrafo, page=numero))
+            tabelas = list(pagina.find_tables())  # por linhas/bordas (preciso)
+            if tabelas:
+                _emitir_tabelas_com_borda(pagina, tabelas, numero, blocos)
+            else:
+                # sem bordas (fatura, extrato): a detecção por linhas acha 0
+                # tabelas. Em vez de gridar a página (que cola palavras e
+                # quebra números), lemos LINHA a linha, com espaçamento bom,
+                # e cada linha "rótulo + valor" vira uma unidade própria (#10).
+                blocos.extend(_blocos_por_linha(pagina, numero))
     return blocos
+
+
+def _emitir_tabelas_com_borda(
+    pagina: Any, tabelas: list[Any], numero: int, blocos: list[Block]
+) -> None:
+    bboxes = [t.bbox for t in tabelas]
+    for tabela in tabelas:
+        rows = tuple(tuple((c or "").strip() for c in linha) for linha in tabela.extract())
+        if any(any(c for c in row) for row in rows):
+            blocos.append(
+                Block(type=BlockType.TABLE, rows=rows, text=render_rows(rows), page=numero)
+            )
+    fonte = pagina.filter(_fora_das_tabelas(bboxes))
+    for paragrafo in _paragrafos(_melhor_texto(fonte)):
+        blocos.append(Block(type=BlockType.PARAGRAPH, text=paragrafo, page=numero))
+
+
+def _blocos_por_linha(pagina: Any, numero: int) -> list[Block]:
+    """Lê o PDF LINHA a linha, usando a melhor variante de extração de texto
+    (a de maior legibilidade, que já separa as palavras — evita a colagem do
+    extract_words). Uma linha "rótulo ... valor" (``Total desta fatura
+    7.016,60``) vira um par rótulo-valor autodescritivo (tabela de uma linha),
+    que o chunker mantém inteiro — o valor certo deixa de se diluir num blob.
+    Linhas sem valor viram prosa. Geral: fatura, extrato, relatório."""
+    texto = _melhor_texto(pagina)
+    vocab = _vocabulario(texto)  # o que a página escreveu separado descola o resto
+    blocos: list[Block] = []
+    prosa: list[str] = []
+
+    def _descarregar_prosa() -> None:
+        if prosa:
+            blocos.append(Block(type=BlockType.PARAGRAPH, text=" ".join(prosa), page=numero))
+            prosa.clear()
+
+    for bruta in texto.splitlines():
+        linha = _descolar_linha(bruta.strip(), vocab)
+        if not linha:
+            _descarregar_prosa()
+            continue
+        par = _rotulo_valor(linha)
+        if par is not None:
+            _descarregar_prosa()
+            rotulo, valor = par
+            blocos.append(
+                Block(
+                    type=BlockType.TABLE,
+                    rows=((rotulo, valor),),
+                    text=f"{rotulo} | {valor}",
+                    page=numero,
+                )
+            )
+        else:
+            prosa.append(linha)
+    _descarregar_prosa()
+    return blocos
+
+
+def _rotulo_valor(linha: str) -> tuple[str, str] | None:
+    """Divide 'rótulo ... valor' numa linha, no primeiro valor monetário.
+
+    Só considera par quando há um rótulo textual ANTES do valor e a linha é
+    curta (rótulo-valor, não uma frase de prosa que menciona um número)."""
+    m = _VALOR_MONETARIO.search(linha)
+    if m is None or len(linha) > 120:
+        return None
+    rotulo = linha[: m.start()].strip(" .:-|")
+    valor = linha[m.start() :].strip()
+    # precisa de um rótulo com ao menos uma letra (senão é só número solto)
+    if not any(c.isalpha() for c in rotulo):
+        return None
+    return rotulo, valor
 
 
 def _fora_das_tabelas(
