@@ -60,6 +60,18 @@ class TestSystemPrompt:
         # o exemplo financeiro concreto ancora a instrução
         assert "fatura" in prompt
 
+    def test_guardrail_ancora_na_evidencia_rotulada(self):
+        """O guardrail (issue #11, ADR-052) é dirigido por EVIDÊNCIA: os
+        rótulos estruturais que o chunking ciente de estrutura coloca no
+        contexto — não por um grau de confiança inventado."""
+        prompt = SYSTEM_PROMPT.lower()
+        assert "rótulo" in prompt or "rotulados" in prompt
+        assert "evidência" in prompt
+        # apresentar candidatos rotulados exige citá-los
+        assert "cite [n]" in prompt or "citação\n  [n]" in prompt or "sua citação" in prompt
+        # explicitamente NÃO é um score de confiança cosmético
+        assert "confiança" in prompt
+
 
 class TestCitations:
     def test_fragments_become_numbered_citations(self):

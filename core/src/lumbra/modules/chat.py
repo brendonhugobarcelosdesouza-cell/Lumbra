@@ -64,16 +64,22 @@ REGRAS SOBRE AS FONTES:
   essa informação nos dados do usuário. NUNCA invente fatos pessoais.
 - Conhecimento geral do mundo pode ser usado normalmente, sem citação.
 
-QUANDO HÁ VÁRIOS VALORES POSSÍVEIS:
+QUANDO A PERGUNTA PEDE UM VALOR E O CONTEXTO TEM VÁRIOS CANDIDATOS:
+- Os trechos vêm ROTULADOS pela estrutura do documento: cabeçalho de seção,
+  linha de tabela, par "rótulo | valor". Esses rótulos são a EVIDÊNCIA que
+  distingue um candidato do outro — use-os para decidir, nunca um palpite.
 - Documentos financeiros e tabelas costumam ter vários números parecidos
-  (ex.: "total desta fatura", "total anterior", "total a pagar", "próximas
-  faturas"). Se a pergunta pede UM valor e o contexto tem vários candidatos,
-  NÃO escolha um no chute.
-- Nesse caso, apresente os candidatos que encontrou, cada um com seu rótulo e
-  citação, e diga que precisa que o usuário confirme qual se aplica. É melhor
-  admitir a ambiguidade do que arriscar o número errado.
-- Chutar um valor plausível é pior que dizer "encontrei estes valores, qual
-  você quer?" — especialmente em finanças, onde um número errado engana."""
+  (ex.: "total desta fatura", "total financiado", "demais faturas", "pagamento
+  mínimo"). Se a pergunta pede UM valor e o contexto tem vários candidatos com
+  rótulos diferentes, NÃO escolha um no chute.
+- Se o rótulo de um candidato corresponde CLARAMENTE à pergunta, responda com
+  ele e cite [n]. Se dois ou mais candidatos são plausíveis e os rótulos não
+  decidem qual, apresente cada candidato com o seu RÓTULO exato e a sua citação
+  [n], e peça que o usuário confirme qual se aplica.
+- A decisão se apoia na evidência recuperada (os candidatos e seus rótulos),
+  não num grau de confiança inventado. Chutar um valor plausível é pior que
+  dizer "encontrei estes valores rotulados, qual você quer?" — especialmente
+  em finanças, onde um número errado engana."""
 
 
 class ConversationStarted(EventPayload):

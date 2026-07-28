@@ -159,16 +159,23 @@ resolver a colagem na extração (o `layout=True` do #8 não separou ESTE
 PDF). Enquanto o léxico estiver morto, buscas por termo exato ("total",
 "7.016,60") não recebem o reforço que deveriam.
 
-### 📋 #10 — Chunking parte o bloco-resumo da fatura
+### ✅ #10 — Chunking parte o bloco-resumo da fatura
 Com a extração corrigida (#8), o Claude passou a ler corretamente "Total
 da fatura anterior 6.791,07" — mas ainda não o total ATUAL (7.016,60). A
 busca mostrou por quê: o chunk do resumo corta em "...Saldo financiado
 0,00 L Lançame[ntos atuais 7.016,60]", separando o valor atual do seu
 rótulo. O chunker (`basic.py`, 1600 chars, split por linha em branco) não
 tem fronteira semântica: numa fatura sem linhas em branco entre itens, ele
-corta no meio do resumo. Caminhos: chunking ciente de estrutura (manter
-blocos rotulados juntos), ou overlap entre chunks, ou chunk maior para
-documentos financeiros. Prioridade: média — Leva 2.
+corta no meio do resumo.
+
+**Resolvido (ADR-051).** Escolhido o caminho "chunking ciente de estrutura":
+a extração passou a preservar blocos tipados (tabelas, cabeçalhos) e o
+chunker faz de cada linha de tabela uma unidade autodescritiva, com a seção
+e o cabeçalho junto do valor. Nada de overlap nem chunk maior nem regra de
+"total". O golden set ponta a ponta (`tests/rag/golden.json` → `answer_cases`)
+trava a correção no CI, provando que a fatura é recuperada nos DOIS sentidos
+("total desta fatura" → 7.016,60 e "total financiado" → 6.314,94) — logo não
+é viés à palavra "total".
 
 ### ✅ #5 — Busca léxica ressuscitada (query tolerante, OR em vez de AND)
 Depois da extração corrigida, um teste de termo único ("fatura") no dado
@@ -241,11 +248,17 @@ confirmação, em vez de escolher no chute. Geral (vale para todo documento),
 barato, e restaura o comportamento seguro. Travado por
 `TestSystemPrompt.test_guardrail_de_valores_ambiguos`.
 
-**Nota sobre a fatura (#10 permanece):** este guardrail torna a resposta
-SEGURA (apresenta candidatos em vez de errar), mas não a torna CORRETA — o
-trecho com "Total desta fatura 7.016,60" ainda não é recuperado para a
-pergunta natural (o correto não se destaca entre os seis totais). A
-correção de correção é o chunking ciente de estrutura (#10), na Leva 2.
+**Fortalecido por evidência (ADR-052).** Com o #10 resolvido, os candidatos
+chegam ao contexto ROTULADOS (seção + linha de tabela). O guardrail passou a
+apoiar-se nesses rótulos como critério: se o rótulo bate com a pergunta,
+responde e cita; se não, apresenta os candidatos com o rótulo exato e a
+citação de cada um. É evidência-dirigido, não um grau de confiança inventado.
+Travado também por `test_guardrail_ancora_na_evidencia_rotulada`.
+
+**Nota sobre a fatura:** o #10 foi resolvido — o trecho "Total desta fatura
+7.016,60" agora É recuperado para a pergunta natural (provado no golden set).
+O guardrail deixa de ser rede para o erro e passa a operar sobre evidência
+que a estrutura tornou separável.
 
 ## A fazer antes da Leva 2
 Priorizar #5 e #6 conforme o quanto atrapalharem o uso diário. Ambos
