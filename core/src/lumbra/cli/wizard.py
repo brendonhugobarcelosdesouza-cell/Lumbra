@@ -11,6 +11,7 @@ que o wizard faz, o usuário também consegue fazer sozinho depois.
 
 from __future__ import annotations
 
+import asyncio
 import getpass
 from pathlib import Path
 from typing import Any
@@ -147,20 +148,38 @@ async def executar_wizard(base_url: str) -> int:
         indexados: dict[str, Any] = {}
         if Path(pasta).is_dir():
             console.linha("  indexando (pode demorar alguns minutos)...")
+            # a indexação é uma execução de skill ASSÍNCRONA: dispara e devolve
+            # um id; a gente consulta até o scan da pasta terminar (os arquivos
+            # em si processam em segundo plano depois).
             resposta = await cliente.post(
-                f"{base_url}/api/v1/dev/skills/document.index/execute",
+                f"{base_url}/api/v1/dev/executions",
                 headers=cabecalho,
-                json={"path": pasta},
+                json={"kind": "skill", "name": "document.index", "payload": {"path": pasta}},
             )
-            if resposta.status_code == 200:
-                indexados = resposta.json()
-                console.linha(
-                    console.cor(
-                        f"  OK    {indexados.get('output', {}).get('queued', 0)} arquivos "
-                        "enfileirados para indexação",
-                        "verde",
+            if resposta.status_code == 202:
+                exec_id = resposta.json()["execution_id"]
+                execucao: dict[str, Any] = {}
+                for _ in range(120):
+                    await asyncio.sleep(1)
+                    detalhe = await cliente.get(
+                        f"{base_url}/api/v1/dev/executions/{exec_id}", headers=cabecalho
                     )
-                )
+                    execucao = detalhe.json().get("execution", {})
+                    if execucao.get("status") in ("completed", "failed"):
+                        break
+                if execucao.get("status") == "completed":
+                    indexados = execucao.get("output") or {}
+                    console.linha(
+                        console.cor(
+                            f"  OK    {indexados.get('queued', 0)} de "
+                            f"{indexados.get('discovered', 0)} arquivos enfileirados "
+                            "(processam em segundo plano)",
+                            "verde",
+                        )
+                    )
+                else:
+                    motivo = execucao.get("error") or "tempo esgotado"
+                    console.linha(console.cor(f"  não consegui indexar: {motivo}", "amarelo"))
             else:
                 console.linha(
                     console.cor(f"  não consegui indexar: {resposta.text[:200]}", "amarelo")

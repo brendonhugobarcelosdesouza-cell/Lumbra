@@ -199,6 +199,18 @@ os termos. Toda a recuperação hoje depende só do vetorial; ressuscitar o
 léxico daria um reforço grande a buscas por termo exato (valores, nomes,
 datas). Prioridade: alta — Leva 2.
 
+### ✅ #13 — Wizard (`lumbra init`) indexava por endpoint inexistente
+
+**Sintoma (achado rodando o app):** `lumbra init` falhava na etapa de
+indexação com `{"detail":"Not Found"}` (404). O wizard chamava
+`/api/v1/dev/skills/document.index/execute` — endpoint que não existe;
+o certo é `POST /api/v1/dev/executions` (kind/name/payload), que é
+ASSÍNCRONO (devolve execution_id, consulta-se depois).
+**Correção:** wizard posta em `/dev/executions` e faz polling em
+`/dev/executions/{id}` até `completed`/`failed`, reportando
+discovered/queued. Bug de contrato desalinhado que só apareceu no
+primeiro uso real do onboarding.
+
 ### ✅ #12 — Superfície da API depende do adaptador de persistência
 
 **Sintoma (achado no P1-a):** os routers de chat e memória (e o Developer
