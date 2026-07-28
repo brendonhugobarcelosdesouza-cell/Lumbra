@@ -36,6 +36,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   List<CitationOut> _parciaisCitacoes = const [];
   String? _ultimoTexto; // para re-tentar após renovar o token (401)
   bool _tentouRenovar = false;
+  String? _provedor; // modelo escolhido para esta conversa (null = padrão local)
 
   @override
   void initState() {
@@ -150,6 +151,68 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (mounted && _ultimoTexto != null) _iniciarStream(_ultimoTexto!);
   }
 
+  /// Escolhe o modelo desta conversa. Local não sai da máquina; nuvem exige
+  /// optar por allow_cloud (privacidade é escolha explícita, docs/24).
+  Future<void> _escolherProvedor() async {
+    List<ProviderChoice> escolhas;
+    try {
+      escolhas = await ref.read(providersProvider.future);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Não foi possível listar modelos: $e')));
+      }
+      return;
+    }
+    if (!mounted) return;
+    final escolhido = await showDialog<ProviderChoice>(
+      context: context,
+      builder: (_) => SimpleDialog(
+        title: const Text('Escolher modelo'),
+        children: [
+          for (final p in escolhas)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, p),
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(p.isLocal ? Icons.computer : Icons.cloud),
+                title: Text(p.name),
+                subtitle: Text('${p.model} · ${p.isLocal ? "local, sem custo" : "nuvem"}'),
+              ),
+            ),
+        ],
+      ),
+    );
+    if (escolhido == null || !mounted) return;
+    try {
+      await ref
+          .read(chatApiProvider)
+          .setPolicyApiV1ChatConversationsConversationIdPolicyPatch(
+            widget.conversationId,
+            PolicyBody(
+              privacy: escolhido.isLocal ? 'local_only' : 'allow_cloud',
+              provider: escolhido.name,
+            ),
+          );
+      if (!mounted) return;
+      setState(() => _provedor = escolhido.name);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Modelo: ${escolhido.name} (${escolhido.isLocal ? "local" : "nuvem"})',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Falha ao trocar de modelo: $e')));
+      }
+    }
+  }
+
   /// Fixa o texto acumulado como bolha final. Chamado dentro de setState.
   void _finalizar() {
     final texto = _parcial;
@@ -183,7 +246,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title ?? 'Conversa')),
+      appBar: AppBar(
+        title: Text(widget.title ?? 'Conversa'),
+        actions: [
+          TextButton.icon(
+            onPressed: _escolherProvedor,
+            icon: const Icon(Icons.tune, size: 18),
+            label: Text(_provedor ?? 'Modelo'),
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Expanded(child: _corpo()),
