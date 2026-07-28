@@ -91,3 +91,24 @@ O corpus alimenta o golden set continuamente:
    armadilha.
 4. As perguntas de recuperação vão para o golden set do CI.
 5. O caso passa a ser critério permanente: nenhuma evolução pode regredi-lo.
+
+## Estado atual (issue #10)
+
+Os primeiros casos ponta a ponta já são **executáveis no CI**, em
+`tests/rag/golden.json` → `answer_cases`, medidos por
+`test_answer_cases_recuperam_o_valor_certo`. Cobrem a fatura sintética (com
+o problema dos vários totais preservado, sem número real) e um relatório de
+vendas. Cada caso trava, como contrato — não como threshold ajustável:
+
+1. o valor certo é **recuperado**;
+2. ele NÃO fica **abaixo** de um valor concorrente (o bug do #10);
+3. ele **sobrevive** à montagem do contexto (mesmo `_diversify` do produto:
+   8 vagas, teto de 3 por documento) — ou seja, chega ao modelo.
+
+A fatura é consultada nos **dois sentidos** ("total desta fatura" → 7.016,60
+e "total financiado" → 6.314,94): a prova de que o chunking discrimina os
+valores pela estrutura, e não por um viés para a palavra "total". A resposta
+textual final (com o modelo) segue como referência de dogfooding, fora do CI
+por ser não-determinística. Recall@1/@3 e MRR de chunk são impressos no
+relatório do CI para acompanhamento; o piso agregado será fixado a partir do
+**medido**, quando houver casos suficientes — nunca arbitrado.

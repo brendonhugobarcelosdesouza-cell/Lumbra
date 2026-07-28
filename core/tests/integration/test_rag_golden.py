@@ -1,13 +1,20 @@
 """Golden set de RAG (E1-07, doc 14): qualidade de busca medida a cada commit.
 
 Indexa o corpus fixo pelo MESMO caminho do produto (document.index →
-pipeline com embeddings → document.find híbrido) e mede recall@1,
-recall@3 e MRR sobre consultas com resposta esperada. Regressão abaixo
-dos thresholds do golden.json QUEBRA o CI — qualidade de busca vira
-contrato, não impressão.
+pipeline com embeddings → document.find híbrido) e mede duas coisas:
+
+* nível de DOCUMENTO (``queries``): recall@1/@3 e MRR — o doc certo aparece?
+* nível de CHUNK (``answer_cases``, issue #10): sobre documentos densos com
+  vários valores parecidos (fatura, relatório), o trecho com o VALOR certo
+  é recuperado ACIMA dos valores concorrentes e chega ao contexto? É a prova
+  numérica de que o chunking ciente de estrutura corrige o #10.
+
+Regressão abaixo dos thresholds ou das garantias por caso QUEBRA o CI —
+qualidade de busca vira contrato, não impressão.
 """
 
 import json
+import re
 import shutil
 import uuid
 from pathlib import Path
@@ -27,6 +34,7 @@ from lumbra.adapters.metrics.in_memory import InMemoryMetrics
 from lumbra.adapters.permissions.static import StaticPermissionAdapter
 from lumbra.adapters.search.postgres import PostgresSearch
 from lumbra.adapters.users.postgres import PostgresUserStore
+from lumbra.context.providers import _diversify
 from lumbra.domain.events import EventRegistry
 from lumbra.kernel.kernel import LumbraKernel
 from lumbra.modules.ingestion import IngestionModule
@@ -109,19 +117,35 @@ def _doc_rank(hits: tuple[dict, ...], expected: str) -> int | None:
     return None
 
 
+def _texto_hit(hit: dict) -> str:
+    """Texto do trecho recuperado, sem os marcadores ** do ts_headline."""
+    return re.sub(r"\*\*", "", hit.get("snippet") or "")
+
+
+def _rank_contendo(hits: list[dict], valor: str) -> int | None:
+    """Posição (1-based) do primeiro trecho que contém ``valor``."""
+    for i, hit in enumerate(hits, 1):
+        if valor in _texto_hit(hit):
+            return i
+    return None
+
+
+async def _indexar_corpus(kernel, user, tmp_path: Path) -> SkillContext:
+    """Indexa o corpus pelo caminho do produto e devolve o contexto do usuário."""
+    corpus_dir = tmp_path / "corpus"
+    shutil.copytree(CORPUS, corpus_dir)
+    ctx = SkillContext(subject=f"user:{user.id}", user_id=user.id)
+    result = await kernel.skills.execute("document.index", {"path": str(corpus_dir)}, context=ctx)
+    assert result.discovered == len(list(CORPUS.iterdir()))  # type: ignore[attr-defined]
+    await kernel.bus.drain()  # type: ignore[attr-defined]
+    return ctx
+
+
 class TestRAGGoldenSet:
     async def test_golden_set_meets_thresholds(self, stack, tmp_path: Path):
         kernel, user = stack
         golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
-        corpus_dir = tmp_path / "corpus"
-        shutil.copytree(CORPUS, corpus_dir)
-        ctx = SkillContext(subject=f"user:{user.id}", user_id=user.id)
-
-        result = await kernel.skills.execute(
-            "document.index", {"path": str(corpus_dir)}, context=ctx
-        )
-        assert result.discovered == len(list(CORPUS.iterdir()))  # type: ignore[attr-defined]
-        await kernel.bus.drain()  # type: ignore[attr-defined]
+        ctx = await _indexar_corpus(kernel, user, tmp_path)
 
         rows: list[tuple[str, str, str, int | None]] = []
         for item in golden["queries"]:
@@ -148,6 +172,57 @@ class TestRAGGoldenSet:
         assert recall_at_1 >= thresholds["recall_at_1"], f"recall@1 regrediu: {summary}\n{report}"
         assert recall_at_3 >= thresholds["recall_at_3"], f"recall@3 regrediu: {summary}\n{report}"
         assert mrr >= thresholds["mrr"], f"MRR regrediu: {summary}\n{report}"
+
+    async def test_answer_cases_recuperam_o_valor_certo(self, stack, tmp_path: Path):
+        """Nível de chunk (issue #10): sobre documentos densos com vários
+        valores parecidos, o trecho com o valor CERTO precisa ser recuperado
+        acima dos concorrentes e sobreviver à montagem do contexto.
+
+        As garantias por caso são o contrato — não um threshold ajustável:
+        (1) o valor certo é recuperado; (2) NÃO fica abaixo de um valor
+        concorrente (o bug do #10); (3) chega ao contexto que o modelo veria
+        (após o mesmo _diversify do produto: 8 vagas, teto 3 por documento).
+        """
+        kernel, user = stack
+        golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
+        ctx = await _indexar_corpus(kernel, user, tmp_path)
+
+        linhas: list[str] = []
+        ranks: list[int | None] = []
+        for caso in golden["answer_cases"]:
+            found = await kernel.skills.execute(
+                "document.find", {"query": caso["query"], "limit": 20}, context=ctx
+            )
+            hits = list(found.hits)  # type: ignore[attr-defined]
+            rank_ok = _rank_contendo(hits, caso["answer"])
+            ranks.append(rank_ok)
+
+            # (1) o valor certo foi recuperado
+            assert rank_ok is not None, (
+                f"valor {caso['answer']!r} não recuperado para {caso['query']!r}"
+            )
+            # (2) o bug do #10: o valor certo não pode ficar ABAIXO de um concorrente
+            for distrator in caso["distractors"]:
+                rank_dist = _rank_contendo(hits, distrator)
+                assert rank_dist is None or rank_ok <= rank_dist, (
+                    f"#10: {distrator!r} (rank {rank_dist}) veio acima do valor certo "
+                    f"{caso['answer']!r} (rank {rank_ok}) em {caso['query']!r}"
+                )
+            # (3) o valor certo chega ao contexto (mesma diversificação do produto)
+            contexto = _diversify(hits, limite=8, por_documento=3)
+            assert any(caso["answer"] in _texto_hit(h) for h in contexto), (
+                f"valor {caso['answer']!r} não sobreviveu ao contexto em {caso['query']!r}"
+            )
+            linhas.append(f"  rank={rank_ok} {caso['query']!r} -> {caso['answer']}")
+
+        total = len(ranks)
+        recall_at_1 = sum(1 for r in ranks if r == 1) / total
+        recall_at_3 = sum(1 for r in ranks if r is not None and r <= 3) / total
+        mrr = sum(1.0 / r for r in ranks if r is not None) / total
+        print(  # noqa: T201 — relatório do CI
+            f"\nRAG answer cases (#10): recall@1={recall_at_1:.2f} "
+            f"recall@3={recall_at_3:.2f} mrr={mrr:.3f} (n={total})\n" + "\n".join(linhas)
+        )
 
 
 # canário anti-truncamento

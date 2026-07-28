@@ -1,7 +1,11 @@
 {
-  "description": "Golden set de RAG (E1-07): consultas com documento esperado. Tipos: lexical (termos presentes), semantic (paráfrase sem termos em comum), exact (código/valor literal).",
+  "description": "Golden set de RAG (E1-07 + #10). 'queries': recuperação em nível de DOCUMENTO (o doc certo aparece?). 'answer_cases': recuperação em nível de CHUNK sobre documentos estruturados densos (o trecho com o VALOR certo é recuperado, acima dos valores concorrentes, e chega ao contexto?). Tipos: lexical, semantic, exact, ambiguous (vários valores plausíveis).",
   "thresholds": {"recall_at_1": 0.75, "recall_at_3": 0.9, "mrr": 0.8},
   "queries": [
+    {"query": "valor total da fatura do cartão de crédito", "expected": "fatura.md", "kind": "lexical"},
+    {"query": "multa por rescisão antecipada do contrato de locação", "expected": "contrato.md", "kind": "lexical"},
+    {"query": "receita total no relatório de vendas do mês", "expected": "relatorio.md", "kind": "lexical"},
+    {"query": "número do requerimento administrativo de segunda via", "expected": "administrativo.md", "kind": "lexical"},
     {"query": "quanto custa o aluguel do apartamento", "expected": "aluguel.md", "kind": "lexical"},
     {"query": "valor da locação do imóvel no centro", "expected": "aluguel.md", "kind": "semantic"},
     {"query": "quem paga o IPTU", "expected": "aluguel.md", "kind": "lexical"},
@@ -26,5 +30,12 @@
     {"query": "0800-777-1234", "expected": "garantia.md", "kind": "exact"},
     {"query": "TP-088", "expected": "viagem.md", "kind": "exact"},
     {"query": "312 kWh", "expected": "boleto.md", "kind": "exact"}
+  ],
+  "answer_cases": [
+    {"query": "qual o valor total desta fatura do cartão?", "expected_doc": "fatura.md", "answer": "7.016,60", "distractors": ["6.314,94", "13.309,37", "1.052,49"], "kind": "ambiguous"},
+    {"query": "qual o total financiado da fatura?", "expected_doc": "fatura.md", "answer": "6.314,94", "distractors": ["7.016,60", "13.309,37"], "kind": "ambiguous"},
+    {"query": "qual o pagamento mínimo da fatura?", "expected_doc": "fatura.md", "answer": "1.052,49", "distractors": ["7.016,60", "6.314,94", "13.309,37"], "kind": "ambiguous"},
+    {"query": "qual a receita total do relatório de vendas?", "expected_doc": "relatorio.md", "answer": "148.200,00", "distractors": ["320,00"], "kind": "ambiguous"},
+    {"query": "qual o ticket médio no relatório de vendas?", "expected_doc": "relatorio.md", "answer": "320,00", "distractors": ["148.200,00"], "kind": "ambiguous"}
   ]
 }
