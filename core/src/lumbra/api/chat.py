@@ -110,6 +110,44 @@ class SetPolicyResponse(BaseModel):
     provider: str | None = None  # anulável => opcional (senão quebra o Dart)
 
 
+class AttachmentOut(BaseModel):
+    """Resultado de anexar um arquivo ao chat (skill chat.attach)."""
+
+    attachment_id: str
+    document_id: str | None = None
+    state: str
+    chunks: int
+    detail: str | None = None
+
+
+class AttachmentItemOut(BaseModel):
+    """Um anexo listado — espelha o Attachment do domínio em tipos JSON."""
+
+    id: str
+    conversation_id: str
+    user_id: str
+    document_id: str | None = None
+    filename: str
+    mime_type: str | None = None
+    size_bytes: int
+    storage_uri: str
+    state: str
+    detail: str | None = None
+    extracted_chars: int | None = None
+    created_at: str
+
+
+class AttachmentsListOut(BaseModel):
+    attachments: tuple[AttachmentItemOut, ...] = ()
+
+
+class CancelResponse(BaseModel):
+    """Resultado de cancelar a geração em andamento (antes: mapa livre)."""
+
+    cancelled: bool
+    detail: str | None = None
+
+
 class StartBody(BaseModel):
     title: str | None = None
     privacy: str = "local_only"
@@ -163,7 +201,11 @@ def build_chat_router(
         result = await _run("chat.start", body.model_dump(), claims)
         return dict(result.model_dump(mode="json"))
 
-    @router.post("/conversations/{conversation_id}/attachments", status_code=201)
+    @router.post(
+        "/conversations/{conversation_id}/attachments",
+        status_code=201,
+        response_model=AttachmentOut,
+    )
     async def upload(
         conversation_id: str,
         claims: authed,
@@ -197,7 +239,10 @@ def build_chat_router(
         )
         return dict(result.model_dump(mode="json"))
 
-    @router.get("/conversations/{conversation_id}/attachments")
+    @router.get(
+        "/conversations/{conversation_id}/attachments",
+        response_model=AttachmentsListOut,
+    )
     async def list_attachments(conversation_id: str, claims: authed) -> dict[str, Any]:
         result = await _run("chat.attachments", {"conversation_id": conversation_id}, claims)
         return dict(result.model_dump(mode="json"))
@@ -228,7 +273,10 @@ def build_chat_router(
         )
         return dict(result.model_dump(mode="json"))
 
-    @router.post("/conversations/{conversation_id}/messages/cancel")
+    @router.post(
+        "/conversations/{conversation_id}/messages/cancel",
+        response_model=CancelResponse,
+    )
     async def cancel_generation(conversation_id: str, claims: authed) -> dict[str, Any]:
         """Cancela a geração em andamento desta conversa (ADR-032).
 

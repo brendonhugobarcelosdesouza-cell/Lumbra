@@ -1,6 +1,159 @@
 {
   "components": {
     "schemas": {
+      "AttachmentItemOut": {
+        "description": "Um anexo listado — espelha o Attachment do domínio em tipos JSON.",
+        "properties": {
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "extracted_chars": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extracted Chars"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "mime_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime Type"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "storage_uri": {
+            "title": "Storage Uri",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "conversation_id",
+          "user_id",
+          "filename",
+          "size_bytes",
+          "storage_uri",
+          "state",
+          "created_at"
+        ],
+        "title": "AttachmentItemOut",
+        "type": "object"
+      },
+      "AttachmentOut": {
+        "description": "Resultado de anexar um arquivo ao chat (skill chat.attach).",
+        "properties": {
+          "attachment_id": {
+            "title": "Attachment Id",
+            "type": "string"
+          },
+          "chunks": {
+            "title": "Chunks",
+            "type": "integer"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attachment_id",
+          "state",
+          "chunks"
+        ],
+        "title": "AttachmentOut",
+        "type": "object"
+      },
+      "AttachmentsListOut": {
+        "properties": {
+          "attachments": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AttachmentItemOut"
+            },
+            "title": "Attachments",
+            "type": "array"
+          }
+        },
+        "title": "AttachmentsListOut",
+        "type": "object"
+      },
       "Body_token_api_v1_auth_token_post": {
         "properties": {
           "client_id": {
@@ -72,6 +225,31 @@
           "file"
         ],
         "title": "Body_upload_api_v1_chat_conversations__conversation_id__attachments_post",
+        "type": "object"
+      },
+      "CancelResponse": {
+        "description": "Resultado de cancelar a geração em andamento (antes: mapa livre).",
+        "properties": {
+          "cancelled": {
+            "title": "Cancelled",
+            "type": "boolean"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          }
+        },
+        "required": [
+          "cancelled"
+        ],
+        "title": "CancelResponse",
         "type": "object"
       },
       "ChatMessageOut": {
@@ -1092,9 +1270,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response List Attachments Api V1 Chat Conversations  Conversation Id  Attachments Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/AttachmentsListOut"
                 }
               }
             },
@@ -1150,9 +1326,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Upload Api V1 Chat Conversations  Conversation Id  Attachments Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/AttachmentOut"
                 }
               }
             },
@@ -1312,9 +1486,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Cancel Generation Api V1 Chat Conversations  Conversation Id  Messages Cancel Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/CancelResponse"
                 }
               }
             },
