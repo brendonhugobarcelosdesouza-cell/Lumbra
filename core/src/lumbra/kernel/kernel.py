@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict
 
 from lumbra.domain.events import EventPayload, EventRegistry
 from lumbra.kernel.approval import AutoApprovePolicy
+from lumbra.kernel.capability_registry import CapabilityRegistry
 from lumbra.kernel.context_engine import ContextEngine
 from lumbra.kernel.events import KernelStarted, KernelStopped, ModuleStarted, register_kernel_events
 from lumbra.kernel.explain import ExplainEngine
@@ -112,6 +113,9 @@ class LumbraKernel:
         self.skills = SkillRegistry(
             permissions, publish=self.publish, explain=self.explain, approval=self.approval
         )
+        # registro de competências (ADR-056), separado do SkillRegistry. Vazio
+        # e fora da execução por ora — o Orchestrator (A5) passa a resolvê-lo.
+        self.capabilities = CapabilityRegistry()
         self.plan_runner = PlanRunner(self.skills)
         self._producer = producer
         self._modules: dict[str, LumbraModule] = {}
