@@ -34,6 +34,29 @@ class ExecuteRequest(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+# Respostas de forma ESTÁVEL da console (as demais rotas são dumps de
+# observabilidade, dinâmicos por natureza, e a console fica FORA do contrato
+# versionado — o cliente gerado nunca as consome). Tipar as estáveis dá
+# clareza ao /docs e ao console_ui sem fingir estrutura no que é dinâmico.
+class ExecutionAccepted(BaseModel):
+    execution_id: str
+
+
+class DevCancelResponse(BaseModel):
+    cancelled: bool
+    reason: str
+
+
+class ReprocessResponse(BaseModel):
+    state: str
+
+
+class DevSearchResponse(BaseModel):
+    mode: str
+    hits: tuple[dict[str, Any], ...] = ()
+    error: str | None = None
+
+
 def build_dev_router(
     *,
     kernel: LumbraKernel,
@@ -56,7 +79,9 @@ def build_dev_router(
     async def list_skills(_claims: authed) -> list[dict[str, Any]]:
         return kernel.capability_catalog()
 
-    @router.post("/executions", status_code=status.HTTP_202_ACCEPTED)
+    @router.post(
+        "/executions", status_code=status.HTTP_202_ACCEPTED, response_model=ExecutionAccepted
+    )
     async def execute(body: ExecuteRequest, claims: authed) -> dict[str, Any]:
         if body.kind == "agent":
             raise HTTPException(
@@ -90,7 +115,7 @@ def build_dev_router(
             "events": [e.model_dump(mode="json") for e in tracker.events_of(execution_id)],
         }
 
-    @router.post("/executions/{execution_id}/cancel")
+    @router.post("/executions/{execution_id}/cancel", response_model=DevCancelResponse)
     async def cancel(execution_id: UUID, _claims: authed, reason: str = "user") -> dict[str, Any]:
         """Cancelamento cooperativo (ADR-032): sinaliza o token, que se
         propaga até a conexão com o provedor."""
@@ -103,7 +128,11 @@ def build_dev_router(
         )
         return {"cancelled": cancelou, "reason": motivo.value}
 
-    @router.post("/executions/{execution_id}/rerun", status_code=status.HTTP_202_ACCEPTED)
+    @router.post(
+        "/executions/{execution_id}/rerun",
+        status_code=status.HTTP_202_ACCEPTED,
+        response_model=ExecutionAccepted,
+    )
     async def rerun(execution_id: UUID, _claims: authed) -> dict[str, str]:
         try:
             record = tracker.rerun(execution_id)
@@ -175,13 +204,13 @@ def build_dev_router(
             "chunks": await documents.chunks_of(document_id),
         }
 
-    @router.post("/documents/{document_id}/reprocess")
+    @router.post("/documents/{document_id}/reprocess", response_model=ReprocessResponse)
     async def reprocess(document_id: UUID, _claims: authed) -> dict[str, str]:
         document = await documents.get(document_id)
         state = await runner.process(document)
         return {"state": state.value}
 
-    @router.get("/search")
+    @router.get("/search", response_model=DevSearchResponse)
     async def dev_search(q: str, claims: authed, limit: int = 10) -> dict[str, Any]:
         """Mesmo caminho do produto: executa a skill document.find (híbrida)."""
         record = tracker.start_skill(
