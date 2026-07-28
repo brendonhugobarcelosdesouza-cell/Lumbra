@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lumbra_api/api.dart';
+import 'package:lumbra_app/core/api.dart';
 import 'package:lumbra_app/core/session.dart';
 
 /// Armazenamento de token em memória — sem plugins nativos nos testes.
@@ -15,6 +17,19 @@ class FakeTokenStorage implements TokenStorage {
 
   @override
   Future<void> clear() async => _session = null;
+}
+
+/// AuthApi que devolve um par novo sem tocar na rede.
+class FakeAuthApi extends AuthApi {
+  @override
+  Future<TokenPair?> refreshApiV1AuthRefreshPost(
+    RefreshRequest refreshRequest,
+  ) async => TokenPair(
+    accessToken: 'novo-access',
+    refreshToken: 'novo-refresh',
+    expiresIn: 900,
+    tokenType: 'Bearer',
+  );
 }
 
 void main() {
@@ -39,6 +54,28 @@ void main() {
     addTearDown(container.dispose);
 
     expect(await container.read(sessionControllerProvider.future), isNull);
+  });
+
+  test('refresh troca o par de tokens e persiste', () async {
+    final fake = FakeTokenStorage(
+      const Session(accessToken: 'velho', refreshToken: 'ref'),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        tokenStorageProvider.overrideWithValue(fake),
+        authApiProvider.overrideWithValue(FakeAuthApi()),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(sessionControllerProvider.future); // build
+    await container.read(sessionControllerProvider.notifier).refresh();
+
+    expect(
+      container.read(sessionControllerProvider).valueOrNull?.accessToken,
+      'novo-access',
+    );
+    expect((await fake.read())?.accessToken, 'novo-access');
   });
 
   test('logout limpa o armazenamento e zera a sessão', () async {

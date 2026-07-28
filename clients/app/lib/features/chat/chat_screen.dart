@@ -34,6 +34,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   StreamSubscription<ChatStreamEvent>? _sub;
   String? _parcial; // texto do assistente em construção (null = sem stream)
   List<CitationOut> _parciaisCitacoes = const [];
+  String? _ultimoTexto; // para re-tentar após renovar o token (401)
+  bool _tentouRenovar = false;
 
   @override
   void initState() {
@@ -77,14 +79,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final texto = _campo.text.trim();
     if (texto.isEmpty || _enviando) return;
     _campo.clear();
-    final token = ref.read(sessionControllerProvider).valueOrNull?.accessToken;
+    _ultimoTexto = texto;
+    _tentouRenovar = false;
     setState(() {
       _bolhas = [..._bolhas, ChatBubble.user(texto)];
+    });
+    _rolarAoFim();
+    _iniciarStream(texto);
+  }
+
+  void _iniciarStream(String texto) {
+    final token = ref.read(sessionControllerProvider).valueOrNull?.accessToken;
+    setState(() {
       _parcial = '';
       _parciaisCitacoes = const [];
       _enviando = true;
     });
-    _rolarAoFim();
     _sub =
         streamChat(
           baseUrl: noBaseUrl,
@@ -109,6 +119,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   void _aoEvento(ChatStreamEvent ev) {
     if (!mounted) return;
+    // token expirou (401): renova com o refresh e re-tenta a última mensagem
+    // uma única vez, sem incomodar o usuário.
+    if (ev is StreamErrorEvent &&
+        ev.detail.contains('401') &&
+        !_tentouRenovar &&
+        _ultimoTexto != null) {
+      _tentouRenovar = true;
+      setState(_limparStream);
+      _renovarERetentar();
+      return;
+    }
     setState(() {
       if (ev is TokenEvent) {
         _parcial = (_parcial ?? '') + ev.delta;
@@ -122,6 +143,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       }
     });
     _rolarAoFim();
+  }
+
+  Future<void> _renovarERetentar() async {
+    await ref.read(sessionControllerProvider.notifier).refresh();
+    if (mounted && _ultimoTexto != null) _iniciarStream(_ultimoTexto!);
   }
 
   /// Fixa o texto acumulado como bolha final. Chamado dentro de setState.

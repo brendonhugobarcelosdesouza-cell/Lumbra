@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:lumbra_api/api.dart';
@@ -64,9 +66,15 @@ final tokenStorageProvider = Provider<TokenStorage>(
 class SessionController extends AsyncNotifier<Session?> {
   TokenStorage get _storage => ref.read(tokenStorageProvider);
   AuthApi get _auth => ref.read(authApiProvider);
+  Timer? _renovacao;
 
   @override
-  Future<Session?> build() => _storage.read();
+  Future<Session?> build() async {
+    ref.onDispose(() => _renovacao?.cancel());
+    final sessao = await _storage.read();
+    if (sessao != null) _agendarRenovacao();
+    return sessao;
+  }
 
   Future<void> login(String email, String password) async {
     state = const AsyncValue.loading();
@@ -74,14 +82,9 @@ class SessionController extends AsyncNotifier<Session?> {
       // /token é OAuth2 password grant: a assinatura gerada é (password,
       // username) — username é o e-mail.
       final pair = await _auth.tokenApiV1AuthTokenPost(password, email);
-      if (pair == null) throw Exception('resposta vazia do Nó');
-      final session = Session(
-        accessToken: pair.accessToken,
-        refreshToken: pair.refreshToken,
-      );
-      await _storage.save(session);
-      return session;
+      return _guardar(pair);
     });
+    if (state.valueOrNull != null) _agendarRenovacao();
   }
 
   Future<void> register(String email, String password) async {
@@ -91,19 +94,50 @@ class SessionController extends AsyncNotifier<Session?> {
         RegisterRequest(email: email, password: password),
       );
       final pair = await _auth.tokenApiV1AuthTokenPost(password, email);
-      if (pair == null) throw Exception('resposta vazia do Nó');
-      final session = Session(
-        accessToken: pair.accessToken,
-        refreshToken: pair.refreshToken,
-      );
-      await _storage.save(session);
-      return session;
+      return _guardar(pair);
     });
+    if (state.valueOrNull != null) _agendarRenovacao();
+  }
+
+  /// Renova o par de tokens com o refresh token. Chamado por timer (proativo,
+  /// antes de expirar) e após um 401 (reativo). Se o refresh também expirou
+  /// (14 dias), desloga.
+  Future<void> refresh() async {
+    final atual = state.valueOrNull;
+    if (atual == null) return;
+    try {
+      final pair = await _auth.refreshApiV1AuthRefreshPost(
+        RefreshRequest(refreshToken: atual.refreshToken),
+      );
+      final nova = await _guardar(pair);
+      state = AsyncValue.data(nova);
+      _agendarRenovacao();
+    } catch (_) {
+      await logout();
+    }
   }
 
   Future<void> logout() async {
+    _renovacao?.cancel();
+    _renovacao = null;
     await _storage.clear();
     state = const AsyncValue.data(null);
+  }
+
+  Future<Session> _guardar(TokenPair? pair) async {
+    if (pair == null) throw Exception('resposta vazia do Nó');
+    final session = Session(
+      accessToken: pair.accessToken,
+      refreshToken: pair.refreshToken,
+    );
+    await _storage.save(session);
+    return session;
+  }
+
+  void _agendarRenovacao() {
+    // o access token vive ~15 min; renova a cada 10 para ter folga
+    _renovacao?.cancel();
+    _renovacao = Timer.periodic(const Duration(minutes: 10), (_) => refresh());
   }
 }
 
