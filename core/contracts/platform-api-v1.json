@@ -410,10 +410,7 @@
           "public_key",
           "state",
           "scopes",
-          "created_at",
-          "paired_at",
-          "last_seen_at",
-          "revoked_at"
+          "created_at"
         ],
         "title": "DeviceResponse",
         "type": "object"
@@ -702,8 +699,7 @@
         },
         "required": [
           "conversation_id",
-          "privacy",
-          "provider"
+          "privacy"
         ],
         "title": "StartOutput",
         "type": "object"

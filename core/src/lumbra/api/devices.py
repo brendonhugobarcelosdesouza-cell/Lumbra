@@ -61,9 +61,11 @@ class DeviceResponse(BaseModel):
     state: DeviceState
     scopes: list[str]
     created_at: str
-    paired_at: str | None
-    last_seen_at: str | None
-    revoked_at: str | None
+    # anuláveis => OPCIONAIS (default None): campo "required porém null" faz o
+    # gerador Dart cravar assert(!= null) e quebrar (ex.: dispositivo não pareado)
+    paired_at: str | None = None
+    last_seen_at: str | None = None
+    revoked_at: str | None = None
 
     @classmethod
     def of(cls, d: Device) -> DeviceResponse:

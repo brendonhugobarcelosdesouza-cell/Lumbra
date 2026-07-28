@@ -125,7 +125,10 @@ class StartInput(SkillInput):
 class StartOutput(SkillOutput):
     conversation_id: str
     privacy: str
-    provider: str | None
+    # anulável => OPCIONAL no contrato (default None): sem isso o schema o
+    # marca "required porém null", e o gerador Dart crava assert(!= null) e
+    # quebra quando não há provedor forçado.
+    provider: str | None = None
 
 
 class AttachInput(SkillInput):

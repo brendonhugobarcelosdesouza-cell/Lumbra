@@ -43,6 +43,25 @@ def test_toda_rota_e_versionada_ou_ops():
     assert fora == [], f"rotas fora de /api/v1 (ou ops): {fora}"
 
 
+def test_campos_required_nao_sao_anulaveis():
+    """Um campo ``required`` E anulável faz o gerador Dart cravar
+    ``assert(json[k] != null)`` e quebrar quando o valor vem null. A regra
+    que evita isso: campo anulável é OPCIONAL (default), não required."""
+    schema = contract.openapi_schema()
+    problemas: list[str] = []
+    for nome, esquema in schema.get("components", {}).get("schemas", {}).items():
+        props = esquema.get("properties", {})
+        for campo in esquema.get("required", []):
+            p = props.get(campo, {})
+            tipos = p.get("type")
+            anulavel = ("null" in tipos if isinstance(tipos, list) else False) or any(
+                sub.get("type") == "null" for sub in p.get("anyOf", [])
+            )
+            if anulavel:
+                problemas.append(f"{nome}.{campo}")
+    assert problemas == [], f"campos required+anuláveis (quebram o cliente Dart): {problemas}"
+
+
 def test_contrato_independe_do_adaptador():
     """Regra 1 (docs/24) como trava: um cliente vê a MESMA API contra um Nó
     em modo memória ou em modo postgres. Se a superfície divergir por
