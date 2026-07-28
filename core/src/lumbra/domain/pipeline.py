@@ -13,6 +13,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from lumbra.domain.document_structure import Block
+
 
 class ProcessingState(StrEnum):
     PENDING = "pending"
@@ -47,6 +49,10 @@ class PipelineContext(BaseModel):
     text: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     entities: list[ExtractedEntity] = Field(default_factory=list)
+    # estrutura do documento (issue #10): preservada ao lado do texto plano.
+    # Vazia para documentos indexados antes desta capacidade — a recuperação
+    # trata blocos ausentes como parágrafo simples (retrocompatível).
+    blocks: list[Block] = Field(default_factory=list)
     chunks: list[str] = Field(default_factory=list)
     stages_done: list[str] = Field(default_factory=list)
 

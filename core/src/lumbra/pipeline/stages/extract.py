@@ -1,11 +1,18 @@
-"""Estágio extract: bytes → texto por tipo de documento."""
+"""Estágio extract: bytes → texto E estrutura por tipo de documento.
+
+Produz duas saídas complementares: o ``text`` plano (contrato estável,
+consumido hoje pelo chunking) e os ``blocks`` estruturados (issue #10),
+que preservam tabelas, cabeçalhos e listas para o chunking ciente de
+estrutura. A extração de estrutura é aditiva e nunca falha o estágio.
+"""
 
 from __future__ import annotations
 
 import io
-import re
 
 from lumbra.domain.pipeline import PipelineError, ProcessingState, StageOutcome
+from lumbra.pipeline.structure import extract_blocks
+from lumbra.pipeline.text_quality import legibilidade as _legibilidade
 from lumbra.ports.pipeline import PipelineStagePort, StageInput
 from lumbra.shared.logging import get_logger
 
@@ -46,40 +53,14 @@ class ExtractStage(PipelineStagePort):
 
         if not text.strip():
             raise PipelineError("extração produziu texto vazio")
-        context = payload.context.model_copy(update={"text": text})
+        # estrutura (issue #10): aditiva ao texto plano, nunca falha o estágio
+        blocks = extract_blocks(raw=payload.raw, mime=mime, text=text)
+        context = payload.context.model_copy(update={"text": text, "blocks": blocks})
         return StageOutcome(
             context=context,
-            message=f"{len(text)} caracteres extraídos",
-            metrics={"chars": float(len(text))},
+            message=f"{len(text)} caracteres, {len(blocks)} blocos extraídos",
+            metrics={"chars": float(len(text)), "blocks": float(len(blocks))},
         )
-
-
-def _legibilidade(texto: str) -> float:
-    """Fração de tokens com tamanho de palavra plausível (2 a 18 letras).
-
-    Extração boa produz prosa: a maioria dos tokens são palavras de
-    comprimento normal. As DUAS formas de extração ruim caem fora dessa
-    faixa e por isso pontuam baixo:
-
-    * fragmentação — ``1 L anç a m ent o s`` — quase tudo vira token de
-      1 caractere (abaixo do piso);
-    * colagem — ``Totaldestafaturaanterior`` — várias palavras grudam num
-      token gigante (acima do teto).
-
-    Penalizar os dois extremos é o que faz a métrica escolher a extração
-    com palavras separadas em vez da que só parece ter palavras. Barato e
-    independente de idioma.
-    """
-    tokens = [t for t in re.split(r"\s+", texto) if t]
-    if not tokens:
-        return 0.0
-    # números (7.016,60, R$, datas) não são "palavras": não contam contra
-    # nem a favor, senão uma tabela financeira seria julgada ilegível
-    palavras = [t for t in tokens if any(c.isalpha() for c in t)]
-    if not palavras:
-        return 0.0
-    plausiveis = sum(1 for t in palavras if 2 <= len(t) <= 18)
-    return plausiveis / len(palavras)
 
 
 def _pypdf_text(raw: bytes) -> str:
