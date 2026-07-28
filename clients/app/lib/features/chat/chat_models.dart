@@ -29,4 +29,24 @@ class ChatBubble {
   final BubbleRole role;
   final String text;
   final List<CitationOut> citations;
+
+  /// As citações que a resposta REALMENTE usou: aquelas cujo número `[n]`
+  /// aparece no texto. O RAG traz várias fontes ao contexto, mas o modelo
+  /// costuma citar só algumas — mostrar todas como se tivessem sido usadas
+  /// engana. Se o modelo não citou ninguém, devolve todas (as fontes
+  /// consultadas), para não esconder a proveniência.
+  List<CitationOut> get usedCitations => citationsUsedIn(text, citations);
+}
+
+final _refCitada = RegExp(r'\[(\d+)\]');
+
+/// Filtra as citações às referenciadas por `[n]` no texto. Exposto à parte
+/// para ser testável sem widget.
+List<CitationOut> citationsUsedIn(String text, List<CitationOut> all) {
+  final usados = _refCitada
+      .allMatches(text)
+      .map((m) => int.parse(m.group(1)!))
+      .toSet();
+  if (usados.isEmpty) return all;
+  return all.where((c) => usados.contains(c.ordinal)).toList();
 }

@@ -365,15 +365,15 @@ class _BolhaView extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SelectableText(bolha.text),
-            if (bolha.citations.isNotEmpty) ...[
+            if (bolha.usedCitations.isNotEmpty) ...[
               const SizedBox(height: 8),
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
                 children: [
-                  for (final c in bolha.citations)
+                  for (final c in bolha.usedCitations)
                     ActionChip(
-                      label: Text('[${c.ordinal}]'),
+                      label: Text('[${c.ordinal}] ${_rotuloCurto(c)}'),
                       onPressed: () => _mostrarCitacao(context, c),
                     ),
                 ],
@@ -383,6 +383,18 @@ class _BolhaView extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// Rótulo curto da fonte para o chip: o título do documento (encurtado),
+  /// ou o tipo se não houver título. Faz o chip identificar a fonte, não só
+  /// numerá-la.
+  String _rotuloCurto(CitationOut c) {
+    final titulo = c.title;
+    if (titulo != null && titulo.trim().isNotEmpty) {
+      final t = titulo.trim();
+      return t.length > 24 ? '${t.substring(0, 23)}…' : t;
+    }
+    return c.kind;
   }
 
   void _mostrarCitacao(BuildContext context, CitationOut c) {
