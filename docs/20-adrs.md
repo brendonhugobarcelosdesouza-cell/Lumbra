@@ -424,3 +424,71 @@ O baseline vive no docstring do arquivo (referência, não contrato): quem otimi
 **Decisão.** `ApprovalPolicyPort` (`ports/approval.py`): `decide(ApprovalRequest) → ALLOW | DENY | NEEDS_CONFIRMATION`. O `SkillRegistry.execute` consulta a política ANTES de executar quando `risk_level >= MEDIUM` (LOW nunca consulta) — distinto de permissão: o sujeito TEM o escopo; decide-se se a ação de impacto pode ser automática. O default é `AutoApprovePolicy` (vive no kernel, como o `KeywordPlanner`) com teto `CRITICAL` = **aprova tudo**: liga o gate sem quebrar nada. Escolha explícita do fundador ("contratos + porta, default permitir"). Quando a tela de confirmação chegar, baixa-se o teto (ex.: `LOW`) e `MEDIUM+` passa a exigir confirmação — troca de política por injeção, sem tocar no Core.
 
 **Consequências.** (+) a fiação da dívida está fechada — o enforcement existe, testado (`test_approval.py`), e é evidência-dirigido (ação + risco), não um número inventado; o mesmo gate serve para agentes (ação HIGH nunca automática por padrão). (+) zero regressão hoje pelo default permitir. (−) o enforcement só "morde" quando a política mudar; até lá, é infraestrutura pronta, não proteção ativa — decisão consciente para não bloquear fluxos sem UI de aprovação.
+
+<!-- ADRs 055–062: DESIGN da camada de agentes (docs/26). Status 🔷 = decisão de
+arquitetura aceita, implementação incremental (A1–A9) pendente de aprovação por
+etapa. Detalhamento, diagramas e contratos em docs/26-arquitetura-agentes.md. -->
+
+## ADR-055 — Capability Model: competências roteáveis, distintas de Skills 🔷
+
+**Contexto.** "Chamar um agente pelo nome" acopla o cliente à implementação. A visão pede roteamento por CAPACIDADE. Mas Skill já é a unidade executável (`domínio.ação`), e misturar os conceitos confundiria "o que executa" com "que competência é pedida".
+
+**Decisão.** Introduzir `Capability` como uma COMPETÊNCIA funcional roteável, com contrato tipado (id, versão, input/output, risco, escopos, read|write) — uma interface, não uma implementação. Uma Capability é cumprida por 1 Skill (fina) ou por 1 Agente (composta); um Agente implementa N Capabilities; uma Capability usa N Skills. Skills não mudam.
+
+**Consequências.** (+) o cliente pede competência, não implementação — provedor trocável sem quebrar o chamador; base do Orchestrator e do discovery. (−) mais um nível de indireção a manter alinhado com as skills; mitigado por capabilities "finas" nascerem mapeadas 1:1 a skills existentes.
+
+## ADR-056 — Capability Registry: resolução determinística capability→provider 🔷
+
+**Contexto.** Com capabilities e múltiplos provedores possíveis (skills e agentes), é preciso decidir QUEM atende cada competência — sem que a IA escolha por padrão.
+
+**Decisão.** Um `CapabilityRegistry` separado do `SkillRegistry`. Resolução determinística: provedores habilitados e de versão compatível, ordenados por `priority`, com preferência de privacidade (local antes de nuvem, herdando o AI Gateway). Registrar um agente publica automaticamente um provedor por capability (uma fonte, dois índices). Empate real → Decision Engine (e, futuro, desempate por qualidade histórica).
+
+**Consequências.** (+) roteamento previsível, testável, offline, explicável; a IA nunca escolhe provedor por default. (−) manter dois registros; mitigado por o Agent Registry alimentar o Capability Registry automaticamente.
+
+## ADR-057 — Agent Registry: descoberta, versionamento, isolamento, plugin-como-agente 🔷
+
+**Contexto.** Agentes precisam ser registrados, descobertos, versionados, habilitados/desabilitados e isolados — sem criar um segundo sistema de plugins.
+
+**Decisão.** `AgentRegistry` espelha o `SkillRegistry` (validação no registro, discovery, eventos), para provedores COMPOSTOS. Versionamento com coexistência; enable/disable; isolamento (um agente não vê o estado de outro); hot reload projetado para o futuro. Agente externo = **plugin (cliente com escopo, ADR-047)** — um só modelo de plugin/identidade.
+
+**Consequências.** (+) reusa o padrão de registro e o modelo de identidade/escopo; sem duplicação. (−) hot reload real exige cuidado de ciclo de vida — projetado agora, implementado depois.
+
+## ADR-058 — Agent Lifecycle: estados e transições auditáveis 🔷
+
+**Contexto.** Uma execução de agente precisa de um ciclo de vida claro para ser observável, cancelável e recuperável.
+
+**Decisão.** Estados: registrado → inicializado → executando → (delegando) → concluído | cancelado | falho → (retry) → descartado. Cada transição emite evento no Event Bus e Explanation. `Descarte` é terminal e sempre limpa o sandbox (estado temporário some; persistência só se aprovada).
+
+**Consequências.** (+) recuperação e auditoria de ponta a ponta; cancelamento e retry bem definidos. (−) mais estados a testar; mitigado por reusar o cancelamento cooperativo (ADR-032) e o ExecutionTracker.
+
+## ADR-059 — Execution Tree: árvore com custo/tokens/tempo/explicação por etapa 🔷
+
+**Contexto.** O `ExecutionTracker` já ganhou `parent_execution_id` (A0.1), mas falta a árvore completa com contabilidade por etapa e cancelamento em cascata.
+
+**Decisão.** Evoluir o record com `step_metrics` (tempo/custo/tokens/explain por etapa — o `AICallRecord` já mede custo/tokens; agregamos) e `budget_spent` (rollup da subárvore). Cancelamento em cascata reusa o `CancellationToken` hierárquico. Visão de árvore no Developer Console (fora do contrato público).
+
+**Consequências.** (+) observabilidade e controle de custo de execuções multiagente; base para budgets. (−) mais dados por execução; aceitável (in-memory + histórico em anel, como hoje).
+
+## ADR-060 — Decision Engine: decisões de orquestração via ExplainPort 🔷
+
+**Contexto.** Quer-se rastrear TODA decisão de orquestração (qual agente, qual capability venceu, por que o Planner, por que fallback, qual modelo) — com ou sem IA — sem duplicar o Explain Engine.
+
+**Decisão.** O Decision Engine é uma ESPECIALIZAÇÃO do `ExplainPort`: um `DecisionRecord` (decision_kind, chosen, candidates, deterministic) emitido pelo mesmo motor, consultável em `/dev/explanations` filtrado por tipo. Não é um motor concorrente.
+
+**Consequências.** (+) toda decisão fica rastreável e comparável (o que venceu e por quê), inclusive as determinísticas; reuso, não duplicação. (−) exige disciplina de emitir o DecisionRecord em cada ponto de escolha; travado por testes.
+
+## ADR-061 — Agent Sandbox: isolamento, budgets e estado temporário descartável 🔷
+
+**Contexto.** Cada execução de agente precisa de contexto, orçamento, memória e arquivos próprios, permissões temporárias e descarte ao final — sem persistência silenciosa (lição da memória episódica que guardou resposta errada como fato).
+
+**Decisão.** `AgentSandbox` por execução: contexto próprio (via Context Engine, filtrado), `BudgetTracker` (tokens/USD/tempo), scratch memory/files, e `scopes` TEMPORÁRIOS = `min(usuário, agente, delegação)`. Isolamento LÓGICO (não contêiner de SO — Local First). Ao terminar, tudo temporário é descartado; escrita na memória do usuário só via skill `memory.store` explícita + ApprovalPolicy.
+
+**Consequências.** (+) os invariantes de segurança e privacidade são materializados aqui; fim da persistência oculta. (−) o sandbox precisa envolver toda chamada do agente; mitigado por ele apenas reduzir escopo e debitar budget — a execução real segue no SkillRegistry.
+
+## ADR-062 — Orchestrator em camadas: determinístico → capability → planner → LLM 🔷
+
+**Contexto.** Multiagente pode virar "vários chats conversando" e multiplicar custo. A IA não pode ser a primeira decisão.
+
+**Decisão.** Orchestrator fino, em 4 camadas acionadas em ordem, parando na primeira que resolve: (1) regras determinísticas; (2) Capability Router (resolve 1 capability); (3) Planner existente (`KeywordPlanner` + `PlanRunner`, hoje dormentes) para multi-passo; (4) LLM Planner (mesmo `PlannerPort`) só quando o determinístico não sabe. Cada camada usada é registrada no Decision Engine.
+
+**Consequências.** (+) simples quando o problema é simples; previsível, testável, offline; acorda o Planner já construído. (−) as regras determinísticas precisam de manutenção conforme surgem intenções novas; aceitável e explícito.
