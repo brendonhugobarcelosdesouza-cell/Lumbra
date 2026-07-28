@@ -23,6 +23,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 from lumbra.domain.events import EventPayload, EventRegistry
+from lumbra.kernel.agent_registry import AgentRegistry
 from lumbra.kernel.approval import AutoApprovePolicy
 from lumbra.kernel.capability_registry import CapabilityRegistry
 from lumbra.kernel.context_engine import ContextEngine
@@ -116,6 +117,9 @@ class LumbraKernel:
         # registro de competências (ADR-056), separado do SkillRegistry. Vazio
         # e fora da execução por ora — o Orchestrator (A5) passa a resolvê-lo.
         self.capabilities = CapabilityRegistry()
+        # registro de agentes (ADR-057); registrar um agente publica seus
+        # provedores no CapabilityRegistry. Dormente até o Orchestrator (A5).
+        self.agents = AgentRegistry(self.capabilities)
         self.plan_runner = PlanRunner(self.skills)
         self._producer = producer
         self._modules: dict[str, LumbraModule] = {}

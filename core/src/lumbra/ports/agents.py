@@ -19,12 +19,14 @@ Invariantes que o manifesto carrega (segurança, docs/25 seção I):
 from __future__ import annotations
 
 import re
+from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from lumbra.ports.skills import SKILL_NAME_RE, RiskLevel
+from lumbra.ports.skills import SKILL_NAME_RE, RiskLevel, SkillContext
 
 AGENT_ID_RE = re.compile(r"^[a-z][a-z0-9-]*$")  # slug: 'finance-agent'
 
@@ -91,6 +93,32 @@ class AgentManifest(BaseModel):
                 raise InvalidAgentError(
                     f"tool inválida no agente {self.id!r}: {tool!r} (esperado 'domínio.ação')"
                 )
+
+
+class AgentResult(BaseModel):
+    """Saída de uma execução de agente. Runtime completo (sandbox, budgets,
+    árvore) vem depois; aqui é o contrato mínimo."""
+
+    model_config = ConfigDict(frozen=True)
+
+    output: dict[str, Any] = Field(default_factory=dict)
+    summary: str = ""
+
+
+class AgentPort(ABC):
+    """Um agente executável: um manifesto + um handler que COMPÕE skills.
+
+    O agente descobre e executa skills pelo SkillRegistry (nunca importa
+    módulos), como qualquer consumidor da plataforma. O runtime que aplica
+    sandbox/budget/árvore ao redor deste handle chega nos incrementos A3/A6."""
+
+    @property
+    @abstractmethod
+    def manifest(self) -> AgentManifest: ...
+
+    @abstractmethod
+    async def handle(self, request: Mapping[str, Any], ctx: SkillContext) -> AgentResult:
+        """Executa a competência do agente e devolve o resultado."""
 
 
 # canário anti-truncamento
