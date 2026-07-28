@@ -22,8 +22,11 @@ class IndexStage(PipelineStagePort):
     async def run(self, payload: StageInput) -> StageOutcome:
         if not payload.context.chunks:
             raise PipelineError("index requer chunks")
-        # replace é idempotente: reexecução produz o mesmo resultado
-        total = await self._documents.replace_chunks(payload.document.id, payload.context.chunks)
+        # replace é idempotente: reexecução produz o mesmo resultado.
+        # chunk_meta (issue #10) carrega a estrutura; vazio grava colunas nulas.
+        total = await self._documents.replace_chunks(
+            payload.document.id, payload.context.chunks, payload.context.chunk_meta
+        )
         return StageOutcome(
             context=payload.context,
             message=f"{total} chunks indexados",

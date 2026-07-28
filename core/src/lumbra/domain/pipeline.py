@@ -13,7 +13,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from lumbra.domain.document_structure import Block
+from lumbra.domain.document_structure import Block, ChunkMeta
 
 
 class ProcessingState(StrEnum):
@@ -54,6 +54,10 @@ class PipelineContext(BaseModel):
     # trata blocos ausentes como parágrafo simples (retrocompatível).
     blocks: list[Block] = Field(default_factory=list)
     chunks: list[str] = Field(default_factory=list)
+    # metadado estrutural alinhado a ``chunks`` por posição (issue #10).
+    # Vazio quando o chunking foi por texto (prosa pura) — o index grava
+    # colunas nulas, e a recuperação trata como chunk sem seção.
+    chunk_meta: list[ChunkMeta] = Field(default_factory=list)
     stages_done: list[str] = Field(default_factory=list)
 
 

@@ -65,6 +65,21 @@ class StructuredDoc(BaseModel):
         return "\n\n".join(b.rendered() for b in self.blocks if b.rendered().strip())
 
 
+class ChunkMeta(BaseModel):
+    """Metadado estrutural de um chunk (issue #10), alinhado ao texto por
+    ordinal. Vazio para chunks legados/prosa simples — a recuperação trata
+    ausência como parágrafo sem seção (retrocompatível)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    section_path: tuple[str, ...] = ()  # trilha de cabecalhos (H1 > H2 > H3)
+    block_type: BlockType | None = None
+    page: int | None = None
+
+    def breadcrumb(self) -> str:
+        return " > ".join(self.section_path)
+
+
 def render_rows(rows: tuple[tuple[str, ...], ...]) -> str:
     """Linhas de tabela em texto: uma linha por linha, células com ' | '.
 

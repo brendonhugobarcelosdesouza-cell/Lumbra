@@ -146,6 +146,11 @@ class ChunkModel(Base):
     tsv: Mapped[Any | None] = mapped_column(
         TSVECTOR, Computed("to_tsvector('portuguese', text)", persisted=True), nullable=True
     )
+    # estrutura do chunk (issue #10). Nulo para chunks de prosa/legado — a
+    # recuperação trata ausência como chunk sem seção (retrocompatível).
+    section_path: Mapped[str | None] = mapped_column(Text, nullable=True)  # 'H1 > H2 > H3'
+    block_type: Mapped[str | None] = mapped_column(Text, nullable=True)  # 'table' | 'paragraph'
+    page: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class EntityModel(Base):

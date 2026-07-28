@@ -13,6 +13,7 @@ from lumbra.adapters.persistence.models import (
     DocumentModel,
     DocumentVersionModel,
 )
+from lumbra.domain.document_structure import ChunkMeta
 from lumbra.ports.document_store import (
     DocumentNotFoundError,
     DocumentRecord,
@@ -146,12 +147,25 @@ class PostgresDocumentStore(DocumentStorePort):
             for r in rows
         ]
 
-    async def replace_chunks(self, document_id: UUID, texts: list[str]) -> int:
+    async def replace_chunks(
+        self, document_id: UUID, texts: list[str], metas: list[ChunkMeta] | None = None
+    ) -> int:
+        metas = metas or []
         async with self._db.session() as session:
             await session.execute(delete(ChunkModel).where(ChunkModel.document_id == document_id))
             session.add_all(
-                ChunkModel(id=uuid7(), document_id=document_id, ordinal=i, text=t)
-                for i, t in enumerate(texts)
+                ChunkModel(
+                    id=uuid7(),
+                    document_id=document_id,
+                    ordinal=i,
+                    text=t,
+                    section_path=(m.breadcrumb() or None) if m else None,
+                    block_type=(m.block_type.value if m and m.block_type else None),
+                    page=(m.page if m else None),
+                )
+                for i, (t, m) in enumerate(
+                    zip(texts, metas + [None] * (len(texts) - len(metas)), strict=True)
+                )
             )
         return len(texts)
 

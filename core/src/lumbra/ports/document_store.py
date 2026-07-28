@@ -10,6 +10,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
+from lumbra.domain.document_structure import ChunkMeta
+
 
 class IngestOutcome(StrEnum):
     """Resultado da deduplicação na entrada do pipeline (req. 7 do E1-2)."""
@@ -79,8 +81,13 @@ class DocumentStorePort(ABC):
         """Grava vetores nos chunks (por ordinal). Retorna quantos atualizou."""
 
     @abstractmethod
-    async def replace_chunks(self, document_id: UUID, texts: list[str]) -> int:
-        """Substitui os chunks do documento (reindexação). Retorna o total."""
+    async def replace_chunks(
+        self, document_id: UUID, texts: list[str], metas: list[ChunkMeta] | None = None
+    ) -> int:
+        """Substitui os chunks do documento (reindexação). Retorna o total.
+
+        ``metas`` (issue #10) carrega estrutura por posição; ausente ou
+        mais curto que ``texts`` grava colunas estruturais nulas."""
 
     @abstractmethod
     async def get(self, document_id: UUID) -> DocumentRecord:
