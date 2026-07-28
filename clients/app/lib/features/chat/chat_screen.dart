@@ -38,10 +38,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   String? _ultimoTexto; // para re-tentar após renovar o token (401)
   bool _tentouRenovar = false;
   String? _provedor; // modelo escolhido para esta conversa (null = padrão local)
+  String? _titulo; // título da conversa; nasce da primeira pergunta (auto)
 
   @override
   void initState() {
     super.initState();
+    _titulo = widget.title;
     _carregarHistorico();
   }
 
@@ -85,6 +87,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _tentouRenovar = false;
     setState(() {
       _bolhas = [..._bolhas, ChatBubble.user(texto)];
+      // conversa nova ganha título já na primeira pergunta, como o Nó faz
+      // no servidor (_title_from) — a AppBar deixa de dizer "Conversa".
+      _titulo ??= _tituloDe(texto);
     });
     _rolarAoFim();
     _iniciarStream(texto);
@@ -236,6 +241,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   void _parar() => setState(_finalizar);
 
+  /// Título a partir da primeira pergunta — espelha o _title_from do Nó
+  /// (espaços colapsados, no máximo 60 caracteres + reticências).
+  String _tituloDe(String texto) {
+    final limpo = texto.trim().replaceAll(RegExp(r'\s+'), ' ');
+    return limpo.length > 60 ? '${limpo.substring(0, 60)}…' : limpo;
+  }
+
   void _rolarAoFim() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scroll.hasClients) {
@@ -248,7 +260,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.title ?? 'Conversa'),
+        title: Text(_titulo ?? 'Conversa'),
         actions: [
           TextButton.icon(
             onPressed: _escolherProvedor,
