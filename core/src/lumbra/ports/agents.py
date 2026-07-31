@@ -68,7 +68,11 @@ class AgentLimits(BaseModel):
 class AgentManifest(BaseModel):
     """Declaração pública de um agente — o que o discovery e a segurança veem."""
 
-    model_config = ConfigDict(frozen=True)
+    # extra='forbid' como no SkillInput: um campo desconhecido é ERRO, não é
+    # ignorado em silêncio. Sem isto, um manifesto com 'skills=' (campo que só
+    # existe na proposta de docs/26) passaria batido e o agente rodaria sem
+    # declarar suas tools — a segurança depende do manifesto estar correto.
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     id: str  # slug único: 'finance-agent'
     name: str

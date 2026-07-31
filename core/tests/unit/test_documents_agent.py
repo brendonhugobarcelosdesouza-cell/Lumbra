@@ -98,6 +98,23 @@ class TestCaminhoCompleto:
         assert m.tools == (SKILL,)
         assert m.memory_access.value == "none"  # não escreve memória do usuário
 
+    async def test_manifesto_nao_aceita_campo_inexistente(self):
+        """Regressão: 'skills' foi PROPOSTO no design (docs/26) mas o manifesto
+        do A0 usa 'tools'. Passar um campo que não existe deve falhar aqui — o
+        mypy pega no CI, e este teste pega em quem roda só a suíte."""
+        from pydantic import ValidationError
+
+        from lumbra.ports.agents import AgentManifest
+
+        with pytest.raises(ValidationError):
+            AgentManifest(
+                id="x",
+                name="X",
+                description="d",
+                provider="test",
+                skills=("a.b",),  # type: ignore[call-arg]  # campo inexistente
+            )
+
 
 class TestSandbox:
     async def test_debita_orcamento_por_passo(self):

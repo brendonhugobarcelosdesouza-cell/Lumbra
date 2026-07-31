@@ -50,7 +50,7 @@ class _Agente(AgentPort):
             description="agente que compõe a skill",
             provider="test",
             capabilities=("demo.composta",),
-            skills=("test.echo",),
+            tools=("test.echo",),
         )
 
     @property

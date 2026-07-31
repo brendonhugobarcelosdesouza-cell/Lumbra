@@ -35,8 +35,7 @@ class DocumentsAgent(AgentPort):
             description="Busca trechos relevantes nos documentos indexados do usuário",
             provider="kernel",
             capabilities=(CAPABILITY,),
-            skills=(SKILL,),
-            tools=(SKILL,),
+            tools=(SKILL,),  # 'tools' é o campo do manifesto (A0); as skills que pode chamar
             required_scopes=("read:documents",),
             risk_level=RiskLevel.LOW,  # leitura
             memory_access=MemoryAccess.NONE,  # não toca a memória do usuário

@@ -56,7 +56,7 @@ class _EchoAgent(AgentPort):
             description="ecoa em maiúsculas",
             provider="test",
             capabilities=("demo.echo",),
-            skills=("test.echo",),
+            tools=("test.echo",),
         )
 
     @property
