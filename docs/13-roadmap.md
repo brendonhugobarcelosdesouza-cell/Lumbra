@@ -130,6 +130,13 @@ jamais tornar a nuvem obrigatória.
   levar o `section_path` também à prosa do contexto (hoje só as tabelas
   rotulam explícito), e reindexação em lote dos documentos já indexados
   para preencherem blocos/metadados novos (chunks legados coexistem nulos).
+* **Camada de agentes (fase A):** **entregue A0→A9** (docs/26, ADRs 055–062).
+  A Lumbra virou plataforma nativa para agentes por EVOLUÇÃO — Capability Model
+  e registries, Orchestrator em camadas (IA por último), Execution Tree,
+  Decision Engine, Sandbox com escopo/budget, delegação com anti-escalada, e
+  rotas `/api/v1/agents` no contrato. Nada de Core novo: agentes são
+  consumidores da plataforma. Pendente: A10 (mobile), que depende do épico de
+  Sync (P3) e do app Android compilado.
 * **Qualidade:** golden set de RAG (agora com `answer_cases` de nível-chunk
   travando o #10), portão de cobertura da suíte inteira, baseline de
   performance como instrumento (ADR-041).

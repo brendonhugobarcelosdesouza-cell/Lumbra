@@ -425,11 +425,13 @@ O baseline vive no docstring do arquivo (referência, não contrato): quem otimi
 
 **Consequências.** (+) a fiação da dívida está fechada — o enforcement existe, testado (`test_approval.py`), e é evidência-dirigido (ação + risco), não um número inventado; o mesmo gate serve para agentes (ação HIGH nunca automática por padrão). (+) zero regressão hoje pelo default permitir. (−) o enforcement só "morde" quando a política mudar; até lá, é infraestrutura pronta, não proteção ativa — decisão consciente para não bloquear fluxos sem UI de aprovação.
 
-<!-- ADRs 055–062: DESIGN da camada de agentes (docs/26). Status 🔷 = decisão de
-arquitetura aceita, implementação incremental (A1–A9) pendente de aprovação por
-etapa. Detalhamento, diagramas e contratos em docs/26-arquitetura-agentes.md. -->
+<!-- ADRs 055–062: camada de agentes (design em docs/26). Implementados nos
+incrementos A1–A9 (✅), exceto o ciclo de vida completo (058, 🚧: o
+ExecutionTracker cobre execução/cancelamento/falha, mas os eventos por
+transição de estado e o retry ainda não). Detalhamento, diagramas e contratos
+em docs/26-arquitetura-agentes.md. -->
 
-## ADR-055 — Capability Model: competências roteáveis, distintas de Skills 🔷
+## ADR-055 — Capability Model: competências roteáveis, distintas de Skills ✅
 
 **Contexto.** "Chamar um agente pelo nome" acopla o cliente à implementação. A visão pede roteamento por CAPACIDADE. Mas Skill já é a unidade executável (`domínio.ação`), e misturar os conceitos confundiria "o que executa" com "que competência é pedida".
 
@@ -437,7 +439,7 @@ etapa. Detalhamento, diagramas e contratos em docs/26-arquitetura-agentes.md. --
 
 **Consequências.** (+) o cliente pede competência, não implementação — provedor trocável sem quebrar o chamador; base do Orchestrator e do discovery. (−) mais um nível de indireção a manter alinhado com as skills; mitigado por capabilities "finas" nascerem mapeadas 1:1 a skills existentes.
 
-## ADR-056 — Capability Registry: resolução determinística capability→provider 🔷
+## ADR-056 — Capability Registry: resolução determinística capability→provider ✅
 
 **Contexto.** Com capabilities e múltiplos provedores possíveis (skills e agentes), é preciso decidir QUEM atende cada competência — sem que a IA escolha por padrão.
 
@@ -445,7 +447,7 @@ etapa. Detalhamento, diagramas e contratos em docs/26-arquitetura-agentes.md. --
 
 **Consequências.** (+) roteamento previsível, testável, offline, explicável; a IA nunca escolhe provedor por default. (−) manter dois registros; mitigado por o Agent Registry alimentar o Capability Registry automaticamente.
 
-## ADR-057 — Agent Registry: descoberta, versionamento, isolamento, plugin-como-agente 🔷
+## ADR-057 — Agent Registry: descoberta, versionamento, isolamento, plugin-como-agente ✅
 
 **Contexto.** Agentes precisam ser registrados, descobertos, versionados, habilitados/desabilitados e isolados — sem criar um segundo sistema de plugins.
 
@@ -453,7 +455,7 @@ etapa. Detalhamento, diagramas e contratos em docs/26-arquitetura-agentes.md. --
 
 **Consequências.** (+) reusa o padrão de registro e o modelo de identidade/escopo; sem duplicação. (−) hot reload real exige cuidado de ciclo de vida — projetado agora, implementado depois.
 
-## ADR-058 — Agent Lifecycle: estados e transições auditáveis 🔷
+## ADR-058 — Agent Lifecycle: estados e transições auditáveis 🚧
 
 **Contexto.** Uma execução de agente precisa de um ciclo de vida claro para ser observável, cancelável e recuperável.
 
@@ -461,7 +463,7 @@ etapa. Detalhamento, diagramas e contratos em docs/26-arquitetura-agentes.md. --
 
 **Consequências.** (+) recuperação e auditoria de ponta a ponta; cancelamento e retry bem definidos. (−) mais estados a testar; mitigado por reusar o cancelamento cooperativo (ADR-032) e o ExecutionTracker.
 
-## ADR-059 — Execution Tree: árvore com custo/tokens/tempo/explicação por etapa 🔷
+## ADR-059 — Execution Tree: árvore com custo/tokens/tempo/explicação por etapa ✅
 
 **Contexto.** O `ExecutionTracker` já ganhou `parent_execution_id` (A0.1), mas falta a árvore completa com contabilidade por etapa e cancelamento em cascata.
 
@@ -469,7 +471,7 @@ etapa. Detalhamento, diagramas e contratos em docs/26-arquitetura-agentes.md. --
 
 **Consequências.** (+) observabilidade e controle de custo de execuções multiagente; base para budgets. (−) mais dados por execução; aceitável (in-memory + histórico em anel, como hoje).
 
-## ADR-060 — Decision Engine: decisões de orquestração via ExplainPort 🔷
+## ADR-060 — Decision Engine: decisões de orquestração via ExplainPort ✅
 
 **Contexto.** Quer-se rastrear TODA decisão de orquestração (qual agente, qual capability venceu, por que o Planner, por que fallback, qual modelo) — com ou sem IA — sem duplicar o Explain Engine.
 
@@ -477,7 +479,7 @@ etapa. Detalhamento, diagramas e contratos em docs/26-arquitetura-agentes.md. --
 
 **Consequências.** (+) toda decisão fica rastreável e comparável (o que venceu e por quê), inclusive as determinísticas; reuso, não duplicação. (−) exige disciplina de emitir o DecisionRecord em cada ponto de escolha; travado por testes.
 
-## ADR-061 — Agent Sandbox: isolamento, budgets e estado temporário descartável 🔷
+## ADR-061 — Agent Sandbox: isolamento, budgets e estado temporário descartável ✅
 
 **Contexto.** Cada execução de agente precisa de contexto, orçamento, memória e arquivos próprios, permissões temporárias e descarte ao final — sem persistência silenciosa (lição da memória episódica que guardou resposta errada como fato).
 
@@ -485,7 +487,7 @@ etapa. Detalhamento, diagramas e contratos em docs/26-arquitetura-agentes.md. --
 
 **Consequências.** (+) os invariantes de segurança e privacidade são materializados aqui; fim da persistência oculta. (−) o sandbox precisa envolver toda chamada do agente; mitigado por ele apenas reduzir escopo e debitar budget — a execução real segue no SkillRegistry.
 
-## ADR-062 — Orchestrator em camadas: determinístico → capability → planner → LLM 🔷
+## ADR-062 — Orchestrator em camadas: determinístico → capability → planner → LLM ✅
 
 **Contexto.** Multiagente pode virar "vários chats conversando" e multiplicar custo. A IA não pode ser a primeira decisão.
 

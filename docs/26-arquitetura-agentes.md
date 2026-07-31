@@ -498,32 +498,58 @@ Runtime" de futuro para "em evolução incremental (A0 entregue)".
 
 Cada incremento é aprovável isoladamente e não quebra os clientes.
 
-- **A0 — Contratos base** ✅ *(entregue)*: `AgentManifest` (seed),
-  `ApprovalPolicyPort` + gate default-permitir, `parent_execution_id`.
-- **A1 — Capability Model + Registry**: `CapabilitySpec`, `CapabilityProvider`,
-  `CapabilityRegistry` (resolução determinística). Skills existentes viram
-  provedores "finos" de capabilities equivalentes. Sem agentes ainda. Testes de
-  resolução/versionamento/enable. Reversível (registry isolado).
-- **A2 — Agent Registry + agente trivial**: registrar/descobrir/versionar
-  agentes; um agente que implementa 1 capability compondo 1 skill (prova de
-  conceito). Publica CapabilityProvider(kind=agent).
-- **A3 — Execution Tree**: `step_metrics` + `budget_spent` + rollup +
-  cancelamento em cascata; visão de árvore no Developer Console. Constrói sobre
-  A0.1.
-- **A4 — Decision Engine**: `decision_kind` + candidatos no ExplainPort; filtro
-  em `/dev/explanations`. Sem novo motor.
-- **A5 — Orchestrator em camadas (1–3)**: regras determinísticas + Capability
-  Router + liga o Planner/PlanRunner dormentes. Rota na Platform API
-  (contrato + snapshot). LLM Planner (camada 4) fica desligado por padrão.
-- **A6 — Agent Sandbox**: isolamento por execução (contexto/budget/scratch/
-  scopes) + descarte + persistência só via aprovação.
-- **A7 — Primeiro agente especialista** (documents ou finance) compondo
-  capabilities; **golden set de agentes** no CI (replay determinístico, AI
-  Gateway mockado, testes de permissão/cancelamento/falha).
-- **A8 — Delegação agente→agente**: escopo intersectado, `max_depth`/`visited`/
-  budget, propagação de privacidade; testes adversariais de escalada.
-- **A9 — LLM Planner (camada 4)** e **A10 — Integração mobile** (disparo/
-  acompanhamento de agentes pelo Android via contrato).
+> **Estado em 30/07/2026: A0 → A9 ENTREGUES** (todos com CI verde, cada um
+> aprovado antes do seguinte). Resta o A10. Os itens abaixo registram o que
+> cada incremento de fato produziu.
+
+- **A0 — Contratos base** ✅: `AgentManifest` (seed), `ApprovalPolicyPort` +
+  gate default-permitir (fechou a dívida do `risk_level`), `parent_execution_id`.
+- **A1 — Capability Model + Registry** ✅: `CapabilitySpec`,
+  `CapabilityProvider`, `CapabilityRegistry` com resolução determinística
+  (habilitados → prioridade → local antes de nuvem → ordem de registro).
+- **A2 — Agent Registry + agente trivial** ✅: registrar/descobrir/versionar/
+  enable; registrar um agente publica seus `CapabilityProvider(kind=agent)`
+  automaticamente (uma fonte, dois índices).
+- **A3 — Execution Tree** ✅: `StepMetric` (tempo/custo/tokens/explicação),
+  `tree()`, `rollup()` da subárvore e `cancel_tree()` em cascata.
+- **A4 — Decision Engine** ✅: `DecisionKind` + candidatos + flag
+  `deterministic`, emitido pelo ExplainPort (sem motor novo).
+- **A5 — Orchestrator em camadas** ✅: (1) regras determinísticas, (2)
+  Capability Router, (3) `achieve()` acordando o Planner/PlanRunner que estavam
+  dormentes desde que foram construídos.
+- **A6 — Agent Sandbox** ✅: `ScopedPermissions` (interseção, só nega mais),
+  `BudgetTracker` (estoura no ato), scratch descartado sempre.
+- **A7 — Primeiro agente especialista** ✅: `DocumentsAgent` implementa
+  `documents.search` compondo `document.find`, sem IA (determinístico no CI).
+- **A7.5 — Platform API** ✅ *(incremento adicionado no caminho)*: rotas
+  `/api/v1/agents` (capabilities, agentes, execute) no contrato versionado. O
+  cliente pede CAPABILITY, nunca agente por nome.
+- **A7.6 — Sandbox no caminho real** ✅ *(idem)*: o Orchestrator cria o sandbox
+  por execução; `SkillRegistry.scoped()` faz o isolamento MORDER (o agente não
+  obtém mais permissão do que declarou).
+- **A8 — Delegação agente→agente** ✅: política do manifesto + anti-loop
+  (cadeia) + escopo intersectado + orçamento COMPARTILHADO pela árvore. 8
+  testes adversariais.
+- **A9 — LLM Planner (camada 4)** ✅: opt-in, só como fallback da camada 3,
+  plano validado contra as skills reais (o modelo não executa o que inventou),
+  pelo AI Gateway, decisão marcada `deterministic=False`.
+- **A10 — Integração mobile** ⏳ *(pendente)*: disparo/acompanhamento de agentes
+  pelo Android. **Depende** do app Android ser compilado (hoje só desktop/web
+  foram) e conversa diretamente com o épico de Sync (P3 do roadmap de produto)
+  — por isso fica para quando aquele épico começar, não como apêndice da fase A.
+
+### Pendências conhecidas (registradas, não esquecidas)
+
+* **Ciclo de vida completo (ADR-058, 🚧)**: o `ExecutionTracker` cobre execução,
+  cancelamento e falha; faltam eventos por transição de estado e a política de
+  retry.
+* **Capabilities "finas"**: hoje só `documents.search` está registrada. O
+  vocabulário maior (memory.*, knowledge.*, calendar.*...) entra conforme as
+  skills correspondentes forem promovidas a competências.
+* **Aprovação com UI**: o gate de risco existe e é testado, mas a política
+  default aprova tudo — baixar o teto exige uma tela de confirmação no app.
+* **Budget de tokens/custo real**: o `BudgetTracker` debita o que o chamador
+  informa; ligá-lo ao `AICallRecord` do AI Gateway automatiza a contabilidade.
 
 Critério de saída de cada incremento: CI verde (quality/tests/integration/
 dart-client/flutter-app/docker), zero regressão nos clientes, ADR aceito,
