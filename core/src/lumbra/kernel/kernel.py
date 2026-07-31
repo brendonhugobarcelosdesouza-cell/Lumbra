@@ -27,6 +27,7 @@ from lumbra.kernel.agent_registry import AgentRegistry
 from lumbra.kernel.approval import AutoApprovePolicy
 from lumbra.kernel.capability_registry import CapabilityRegistry
 from lumbra.kernel.context_engine import ContextEngine
+from lumbra.kernel.decisions import DecisionEngine
 from lumbra.kernel.events import KernelStarted, KernelStopped, ModuleStarted, register_kernel_events
 from lumbra.kernel.explain import ExplainEngine
 from lumbra.kernel.planning import KeywordPlanner, PlanRunner
@@ -111,6 +112,9 @@ class LumbraKernel:
         self.approval: ApprovalPolicyPort = approval or AutoApprovePolicy()
         self.context = ContextEngine()
         self.explain = ExplainEngine()
+        # decisões de orquestração (ADR-060): especializa o Explain, não o
+        # substitui — mesma trilha de auditoria, vocabulário estruturado.
+        self.decisions = DecisionEngine(self.explain)
         self.skills = SkillRegistry(
             permissions, publish=self.publish, explain=self.explain, approval=self.approval
         )
