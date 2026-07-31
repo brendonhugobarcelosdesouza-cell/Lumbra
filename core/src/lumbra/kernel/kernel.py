@@ -30,6 +30,7 @@ from lumbra.kernel.context_engine import ContextEngine
 from lumbra.kernel.decisions import DecisionEngine
 from lumbra.kernel.events import KernelStarted, KernelStopped, ModuleStarted, register_kernel_events
 from lumbra.kernel.explain import ExplainEngine
+from lumbra.kernel.orchestrator import Orchestrator
 from lumbra.kernel.planning import KeywordPlanner, PlanRunner
 from lumbra.kernel.skill_registry import SkillRegistry
 from lumbra.ports.approval import ApprovalPolicyPort
@@ -125,6 +126,14 @@ class LumbraKernel:
         # provedores no CapabilityRegistry. Dormente até o Orchestrator (A5).
         self.agents = AgentRegistry(self.capabilities)
         self.plan_runner = PlanRunner(self.skills)
+        # orquestrador em camadas (ADR-062): determinístico primeiro. Disponível
+        # para quem quiser rotear por capability; nenhum fluxo atual o usa ainda.
+        self.orchestrator = Orchestrator(
+            skills=self.skills,
+            capabilities=self.capabilities,
+            agents=self.agents,
+            decisions=self.decisions,
+        )
         self._producer = producer
         self._modules: dict[str, LumbraModule] = {}
         self._cancellation = CancellationToken(name="kernel")
