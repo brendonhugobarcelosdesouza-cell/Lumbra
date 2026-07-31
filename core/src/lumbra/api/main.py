@@ -39,6 +39,7 @@ from lumbra.adapters.metadata.regex_extractors import default_extractors
 from lumbra.adapters.metrics.in_memory import InMemoryMetrics
 from lumbra.adapters.permissions.static import StaticPermissionAdapter
 from lumbra.adapters.persistence.database import Database
+from lumbra.adapters.playbooks.in_memory import InMemoryPlaybookStore
 from lumbra.adapters.search.postgres import PostgresSearch
 from lumbra.adapters.security.passwords import PasswordHasher
 from lumbra.adapters.security.tokens import TokenService
@@ -61,6 +62,7 @@ from lumbra.context.providers import (
     AttachmentContextProvider,
     DocumentContextProvider,
     MemoryContextProvider,
+    PlaybookContextProvider,
 )
 from lumbra.domain.events import EventRegistry
 from lumbra.kernel.core_module import KernelCoreModule
@@ -70,6 +72,7 @@ from lumbra.modules.ai import AIModule
 from lumbra.modules.chat import ChatModule
 from lumbra.modules.ingestion import IngestionModule
 from lumbra.modules.memory import MemoryModule
+from lumbra.modules.playbooks import PlaybookModule
 from lumbra.modules.reflection import ReflectionModule
 from lumbra.pipeline.metadata_engine import MetadataEngine
 from lumbra.pipeline.runner import PipelineRunner, default_resolver
@@ -169,6 +172,11 @@ def create_default_app() -> FastAPI:
         device_store = InMemoryDeviceStore()
 
     kernel.register_module(MemoryModule(store=memory_store, gateway=gateway))
+    # memória PROCEDURAL (L1): o quarto tipo de conhecimento — como se faz.
+    # In-memory por ora (o volume é pequeno); Postgres quando o uso pedir.
+    playbook_store = InMemoryPlaybookStore()
+    kernel.register_module(PlaybookModule(playbook_store))
+    kernel.context.register(PlaybookContextProvider(kernel.skills))
     chat_module = ChatModule(
         conversations=conversation_store, gateway=gateway, attachments=attachment_store
     )

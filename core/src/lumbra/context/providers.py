@@ -210,6 +210,49 @@ class AttachmentContextProvider(ContextProviderPort):
         return fragments
 
 
+class PlaybookContextProvider(ContextProviderPort):
+    """Procedimentos que já funcionaram (L1) — a memória PROCEDURAL.
+
+    Os demais provedores trazem o que o usuário SABE (fatos, documentos); este
+    traz o que a plataforma já APRENDEU A FAZER. Poucos e curtos por natureza,
+    então entram com relevância alta: quando existe um procedimento para a
+    tarefa, ele costuma valer mais que mais um trecho de documento."""
+
+    def __init__(self, skills: SkillRegistry, *, limit: int = 2) -> None:
+        self._skills = skills
+        self._limit = limit
+
+    @property
+    def name(self) -> str:
+        return "playbooks"
+
+    async def provide(self, request: ContextRequest) -> list[ContextFragment]:
+        if request.user_id is None:
+            return []
+        result = await self._skills.execute(
+            "playbook.search",
+            {"query": request.query, "limit": self._limit},
+            context=SkillContext(subject="context-engine", user_id=request.user_id),
+        )
+        hits: tuple[dict[str, Any], ...] = result.hits  # type: ignore[attr-defined]
+        return [
+            ContextFragment(
+                source=self.name,
+                content=hit["content"],
+                relevance=max(0.7, _relevance(position)),
+                metadata={
+                    "kind": "playbook",
+                    "ref_id": hit["playbook_id"],
+                    "title": f"procedimento: {hit['title']}",
+                    # proveniência importa: um playbook do usuário vale mais
+                    # que um inferido pela plataforma
+                    "why": f"origem {hit['origin']}, usado {hit['uses']}x",
+                },
+            )
+            for position, hit in enumerate(hits)
+        ]
+
+
 def _clean(snippet: str) -> str:
     """ts_headline marca termos com ** — ruído para o modelo."""
     return snippet.replace("**", "").strip()
