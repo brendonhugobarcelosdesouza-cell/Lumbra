@@ -44,6 +44,9 @@ from lumbra.adapters.security.passwords import PasswordHasher
 from lumbra.adapters.security.tokens import TokenService
 from lumbra.adapters.users.in_memory import InMemoryUserStore
 from lumbra.adapters.users.postgres import PostgresUserStore
+from lumbra.agents.documents import CAPABILITY as DOCUMENTS_SEARCH
+from lumbra.agents.documents import DocumentsAgent
+from lumbra.api.agents import build_agents_router
 from lumbra.api.app import create_app
 from lumbra.api.auth import AuthServices
 from lumbra.api.chat import build_chat_router
@@ -74,6 +77,7 @@ from lumbra.pipeline.stages.kg import KnowledgeGraphStage
 from lumbra.pipeline.stages.metadata import MetadataStage
 from lumbra.pipeline.stages.ocr import OCRStage
 from lumbra.ports.attachments import AttachmentStorePort
+from lumbra.ports.capabilities import CapabilitySpec
 from lumbra.ports.conversations import ConversationStorePort
 from lumbra.ports.devices import DeviceStorePort
 from lumbra.ports.document_store import DocumentRecord
@@ -211,6 +215,16 @@ def create_default_app() -> FastAPI:
         )
         kernel.context.register(DocumentContextProvider(kernel.skills))
         kernel.context.register(AttachmentContextProvider(attachment_store, documents))
+        # camada de agentes (A7.5): a competência e quem a implementa. O cliente
+        # pede a CAPABILITY; o Orchestrator resolve o provedor.
+        kernel.capabilities.register_capability(
+            CapabilitySpec(
+                id=DOCUMENTS_SEARCH,
+                description="Busca trechos relevantes nos documentos do usuário",
+                required_scopes=("read:documents",),
+            )
+        )
+        kernel.agents.register(DocumentsAgent(kernel.skills))
         if not settings.is_production:
             from lumbra.api.auth import make_require_subject
             from lumbra.api.dev import build_dev_router
@@ -258,6 +272,7 @@ def create_default_app() -> FastAPI:
             kernel, conversation_store, _mrs(auth.tokens), chat_module, gateway, blobs
         ),
         build_devices_router(kernel, device_store, auth.tokens),
+        build_agents_router(kernel, _mrs(auth.tokens)),
     ]
     return create_app(
         settings, kernel=kernel, auth=auth, dev_router=dev_router, extra_routers=extra_routers

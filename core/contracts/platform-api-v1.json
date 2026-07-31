@@ -1,6 +1,67 @@
 {
   "components": {
     "schemas": {
+      "AgentOut": {
+        "description": "Um agente registrado — informativo (o cliente não o invoca por nome).",
+        "properties": {
+          "capabilities": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "risk_level": {
+            "title": "Risk Level",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "risk_level"
+        ],
+        "title": "AgentOut",
+        "type": "object"
+      },
+      "AgentsOut": {
+        "properties": {
+          "agents": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AgentOut"
+            },
+            "title": "Agents",
+            "type": "array"
+          }
+        },
+        "title": "AgentsOut",
+        "type": "object"
+      },
       "AttachmentItemOut": {
         "description": "Um anexo listado — espelha o Attachment do domínio em tipos JSON.",
         "properties": {
@@ -250,6 +311,76 @@
           "cancelled"
         ],
         "title": "CancelResponse",
+        "type": "object"
+      },
+      "CapabilitiesOut": {
+        "properties": {
+          "capabilities": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CapabilityOut"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          }
+        },
+        "title": "CapabilitiesOut",
+        "type": "object"
+      },
+      "CapabilityOut": {
+        "description": "Uma competência disponível — o vocabulário que o cliente usa.",
+        "properties": {
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "provider_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Kind"
+          },
+          "provider_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Ref"
+          },
+          "risk_level": {
+            "title": "Risk Level",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "risk_level",
+          "mode"
+        ],
+        "title": "CapabilityOut",
         "type": "object"
       },
       "ChatMessageOut": {
@@ -658,6 +789,60 @@
         ],
         "title": "DeviceState",
         "type": "string"
+      },
+      "ExecuteBody": {
+        "properties": {
+          "capability": {
+            "maxLength": 120,
+            "minLength": 3,
+            "title": "Capability",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          }
+        },
+        "required": [
+          "capability"
+        ],
+        "title": "ExecuteBody",
+        "type": "object"
+      },
+      "ExecuteOut": {
+        "description": "Resultado da orquestração, com a proveniência da decisão.",
+        "properties": {
+          "capability": {
+            "title": "Capability",
+            "type": "string"
+          },
+          "layer": {
+            "title": "Layer",
+            "type": "string"
+          },
+          "output": {
+            "additionalProperties": true,
+            "title": "Output",
+            "type": "object"
+          },
+          "provider_kind": {
+            "title": "Provider Kind",
+            "type": "string"
+          },
+          "provider_ref": {
+            "title": "Provider Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability",
+          "provider_kind",
+          "provider_ref",
+          "layer"
+        ],
+        "title": "ExecuteOut",
+        "type": "object"
       },
       "ForgetOut": {
         "properties": {
@@ -1248,6 +1433,106 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/agents": {
+      "get": {
+        "operationId": "list_agents_api_v1_agents_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Agents",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/api/v1/agents/capabilities": {
+      "get": {
+        "description": "O vocabulário de competências e quem as atende hoje.",
+        "operationId": "list_capabilities_api_v1_agents_capabilities_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilitiesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Capabilities",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
+    "/api/v1/agents/execute": {
+      "post": {
+        "description": "Executa uma CAPABILITY — o Orchestrator escolhe o provedor.\n\nO cliente não sabe (nem precisa saber) se quem atendeu foi uma skill\nou um agente: é o desacoplamento que o Capability Model garante.",
+        "operationId": "execute_api_v1_agents_execute_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecuteBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecuteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Execute",
+        "tags": [
+          "agents"
+        ]
+      }
+    },
     "/api/v1/auth/refresh": {
       "post": {
         "operationId": "refresh_api_v1_auth_refresh_post",
