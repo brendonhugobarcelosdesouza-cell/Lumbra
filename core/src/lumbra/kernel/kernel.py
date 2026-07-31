@@ -133,6 +133,8 @@ class LumbraKernel:
             capabilities=self.capabilities,
             agents=self.agents,
             decisions=self.decisions,
+            planner=self.planner,
+            plan_runner=self.plan_runner,
         )
         self._producer = producer
         self._modules: dict[str, LumbraModule] = {}

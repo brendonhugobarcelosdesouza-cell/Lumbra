@@ -24,8 +24,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from lumbra.kernel.agent_registry import AgentRegistry
 from lumbra.kernel.capability_registry import CapabilityRegistry
 from lumbra.kernel.decisions import Candidate, DecisionEngine, DecisionKind, DecisionRecord
+from lumbra.kernel.planning import PlanResult, PlanRunner
 from lumbra.kernel.skill_registry import SkillRegistry
 from lumbra.ports.capabilities import CapabilityError, ProviderKind
+from lumbra.ports.planner import PlannerPort
 from lumbra.ports.skills import SkillContext
 from lumbra.shared.logging import get_logger
 
@@ -57,11 +59,17 @@ class Orchestrator:
         agents: AgentRegistry,
         decisions: DecisionEngine,
         rules: Mapping[str, str] | None = None,
+        planner: PlannerPort | None = None,
+        plan_runner: PlanRunner | None = None,
     ) -> None:
         self._skills = skills
         self._capabilities = capabilities
         self._agents = agents
         self._decisions = decisions
+        # camada 3: planejamento multi-passo (opcional; sem planner, achieve falha
+        # explicitamente em vez de improvisar)
+        self._planner = planner
+        self._plan_runner = plan_runner
         # camada 1: intenção conhecida → capability (atalho explícito)
         self._rules: dict[str, str] = dict(rules or {})
 
@@ -155,6 +163,40 @@ class Orchestrator:
             layer=camada,
             output=output,
         )
+
+    async def achieve(self, goal: str, *, ctx: SkillContext) -> PlanResult:
+        """Camada 3: objetivo MULTI-PASSO via Planner + PlanRunner existentes.
+
+        Acorda o que já estava construído: o planner decompõe o objetivo em um
+        DAG de passos (dependências explícitas) e o PlanRunner executa com
+        FALHA PARCIAL (passo falho não derruba o plano). Cada passo passa pelo
+        SkillRegistry — escopo, risco, explain e cancelamento valem igual.
+
+        Sem planner configurado, levanta em vez de improvisar: a camada 4 (LLM)
+        é opt-in e chega depois."""
+        if self._planner is None or self._plan_runner is None:
+            raise OrchestrationError(
+                "planejamento indisponível: nenhum PlannerPort/PlanRunner configurado"
+            )
+        plano = await self._planner.plan(goal, skills=self._skills.manifests())
+        # camada 3 é determinística; só a 4 (LLM Planner, A9) não será
+        sem_ia = type(self._planner).__name__ != "LLMPlanner"
+        self._decisions.record(
+            DecisionRecord(
+                kind=DecisionKind.PLANNING,
+                chosen=type(self._planner).__name__,
+                candidates=tuple(Candidate(ref=s.skill, reason=s.rationale) for s in plano.steps),
+                reason=f"objetivo multi-passo: {len(plano.steps)} passo(s) planejado(s)",
+                algorithm="PlannerPort + PlanRunner (DAG com falha parcial)",
+                deterministic=sem_ia,
+                correlation_id=ctx.correlation_id,
+                inputs_used={"goal": goal},
+            )
+        )
+        if not plano.steps:
+            raise OrchestrationError(f"o planner não soube decompor o objetivo: {goal!r}")
+        _log.info("orchestration_planned", goal=goal, steps=len(plano.steps), layer="planner")
+        return await self._plan_runner.run(plano, context=ctx)
 
 
 # canário anti-truncamento

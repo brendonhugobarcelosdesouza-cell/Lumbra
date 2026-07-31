@@ -130,6 +130,53 @@ class TestExecucao:
             await kernel.orchestrator.execute("demo.orfa", {}, ctx=_ctx())
 
 
+class TestCamadaPlanner:
+    """A5.2: camada 3 — objetivos multi-passo pelo Planner/PlanRunner que
+    estavam dormentes desde que foram construídos."""
+
+    async def test_objetivo_multipasso_executa_o_plano(self, kernel):
+        # o KeywordPlanner casa capacidades da skill com palavras do objetivo
+        await kernel.skills.register(
+            Skill(
+                manifest=SkillManifest(
+                    name="test.resumir",
+                    description="resume",
+                    provider="test",
+                    capabilities=("resumir",),
+                ),
+                input_model=_In,
+                output_model=_Out,
+                handler=_echo,
+            )
+        )
+        resultado = await kernel.orchestrator.achieve("resumir tudo", ctx=_ctx())
+        assert resultado.succeeded
+        assert [r.skill for r in resultado.results] == ["test.resumir"]
+
+    async def test_registra_a_decisao_de_planejar(self, kernel):
+        await kernel.skills.register(
+            Skill(
+                manifest=SkillManifest(
+                    name="test.listar",
+                    description="lista",
+                    provider="test",
+                    capabilities=("listar",),
+                ),
+                input_model=_In,
+                output_model=_Out,
+                handler=_echo,
+            )
+        )
+        await kernel.orchestrator.achieve("listar coisas", ctx=_ctx())
+        (decisao,) = kernel.decisions.query(kind=DecisionKind.PLANNING)
+        assert "KeywordPlanner" in decisao.decision
+        assert decisao.inputs_used["deterministic"] is True  # planner sem IA
+
+    async def test_objetivo_indecomponivel_levanta(self, kernel):
+        with pytest.raises(OrchestrationError):
+            await kernel.orchestrator.achieve("objetivo que ninguem sabe fazer", ctx=_ctx())
+
+
 class TestDecisoesRegistradas:
     async def test_registra_roteamento_e_selecao_de_provedor(self, kernel):
         await kernel.orchestrator.execute("demo.fina", {"text": "a"}, ctx=_ctx())
