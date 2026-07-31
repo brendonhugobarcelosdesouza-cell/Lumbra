@@ -25,7 +25,7 @@ from lumbra.kernel.agent_registry import AgentRegistry
 from lumbra.kernel.capability_registry import CapabilityRegistry
 from lumbra.kernel.decisions import Candidate, DecisionEngine, DecisionKind, DecisionRecord
 from lumbra.kernel.planning import PlanResult, PlanRunner
-from lumbra.kernel.sandbox import AgentSandbox
+from lumbra.kernel.sandbox import AgentSandbox, DelegationDeniedError
 from lumbra.kernel.skill_registry import SkillRegistry
 from lumbra.ports.capabilities import CapabilityError, ProviderKind
 from lumbra.ports.permissions import PermissionPort
@@ -205,6 +205,70 @@ class Orchestrator:
                 steps=gasto.steps,
                 tokens=gasto.tokens,
             )
+            return resultado.output
+
+    async def delegate(
+        self,
+        capability_id: str,
+        payload: Mapping[str, Any],
+        *,
+        ctx: SkillContext,
+        sandbox: AgentSandbox,
+    ) -> dict[str, Any]:
+        """Um agente delega uma CAPABILITY a outro (A8).
+
+        Três barreiras, todas ANTES de executar: (1) o manifesto do agente atual
+        precisa permitir delegar para aquela capability; (2) a cadeia não pode
+        repetir um agente (anti-loop A→B→A); (3) escopo do filho = interseção, e
+        o orçamento é o MESMO da árvore. Delegar nunca amplia poder nem zera
+        contas — é sempre uma redução."""
+        atual = self._agents.get(sandbox.agent_id).manifest
+        politica = atual.delegation
+        if not politica.can_delegate:
+            raise DelegationDeniedError(
+                f"{atual.id} não pode delegar (delegation.can_delegate=False)"
+            )
+        if politica.to_capabilities and capability_id not in politica.to_capabilities:
+            raise DelegationDeniedError(
+                f"{atual.id} não pode delegar para {capability_id!r} "
+                f"(permitidas: {politica.to_capabilities})"
+            )
+
+        provider = self._capabilities.resolve(capability_id)
+        self._decisions.record(
+            DecisionRecord(
+                kind=DecisionKind.PROVIDER_SELECTION,
+                chosen=provider.ref,
+                reason=f"delegação de {atual.id} para {capability_id}",
+                algorithm="resolução determinística + interseção de escopo",
+                correlation_id=ctx.correlation_id,
+                inputs_used={"delegator": atual.id, "chain": list(sandbox.chain)},
+            )
+        )
+        if provider.kind is ProviderKind.SKILL:
+            # delegar a uma skill: roda no MESMO sandbox (sem nova profundidade)
+            sandbox.budget.charge(steps=1)
+            saida = await self._skills.scoped(sandbox.permissions).execute(
+                provider.ref, payload, context=ctx
+            )
+            return dict(saida.model_dump(mode="json"))
+
+        delegado = self._agents.get(provider.ref)
+        filho = sandbox.child(  # levanta em ciclo, profundidade ou escopo
+            agent_id=delegado.manifest.id,
+            scopes=frozenset(delegado.manifest.required_scopes),
+            limits=delegado.manifest.limits,
+        )
+        _log.info(
+            "agent_delegated",
+            de=atual.id,
+            para=delegado.manifest.id,
+            capability=capability_id,
+            depth=filho.depth,
+            chain=list(filho.chain),
+        )
+        with filho:
+            resultado = await delegado.handle(payload, ctx, sandbox=filho)
             return resultado.output
 
     async def achieve(self, goal: str, *, ctx: SkillContext) -> PlanResult:

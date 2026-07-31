@@ -41,6 +41,19 @@ class BudgetExceededError(Exception):
         self.recurso = recurso
 
 
+class DelegationLoopError(Exception):
+    """Ciclo na cadeia de delegação (A→B→A). Barrado ANTES de executar."""
+
+    def __init__(self, agent_id: str, cadeia: tuple[str, ...]) -> None:
+        super().__init__(f"delegação cíclica: {agent_id} já está na cadeia {' -> '.join(cadeia)}")
+        self.agent_id = agent_id
+        self.chain = cadeia
+
+
+class DelegationDeniedError(Exception):
+    """O manifesto do agente não permite delegar (ou não para esta capability)."""
+
+
 class BudgetSnapshot(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -124,14 +137,20 @@ class AgentSandbox:
         limits: AgentLimits,
         cancellation: CancellationToken | None = None,
         depth: int = 0,
+        chain: tuple[str, ...] = (),
+        budget: BudgetTracker | None = None,
     ) -> None:
         self.agent_id = agent_id
         self.permissions = ScopedPermissions(permissions, scopes)
         self.scopes = scopes
-        self.budget = BudgetTracker(limits)
+        # o orçamento é COMPARTILHADO pela árvore de delegação (A8): o custo do
+        # filho debita do mesmo teto, senão delegar seria burlar o budget.
+        self.budget = budget if budget is not None else BudgetTracker(limits)
         self.limits = limits
         self.cancellation = cancellation
         self.depth = depth
+        # agentes já na cadeia — impede A→B→A (anti-loop)
+        self.chain = chain or (agent_id,)
         # memória temporária do agente — NÃO é a memória do usuário
         self.scratch: dict[str, Any] = {}
         self._tempdir: Path | None = None
@@ -145,8 +164,11 @@ class AgentSandbox:
         return self._tempdir
 
     def child(self, *, agent_id: str, scopes: frozenset[str], limits: AgentLimits) -> AgentSandbox:
-        """Sandbox de um agente DELEGADO: escopo intersectado e profundidade +1.
-        Nunca amplia permissão nem reinicia o controle de profundidade."""
+        """Sandbox de um agente DELEGADO: escopo intersectado, profundidade +1,
+        cadeia estendida e MESMO orçamento. Nunca amplia permissão, nem reinicia
+        profundidade, nem zera o budget — delegar não é escapatória."""
+        if agent_id in self.chain:  # anti-loop A -> B -> A
+            raise DelegationLoopError(agent_id, self.chain)
         if self.depth + 1 > self.limits.max_depth:
             raise BudgetExceededError("profundidade", self.depth + 1, self.limits.max_depth)
         return AgentSandbox(
@@ -158,6 +180,8 @@ class AgentSandbox:
             if self.cancellation
             else None,
             depth=self.depth + 1,
+            chain=(*self.chain, agent_id),
+            budget=self.budget,  # orçamento compartilhado pela árvore
         )
 
     def discard(self) -> None:
