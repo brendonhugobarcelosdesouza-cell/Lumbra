@@ -8,7 +8,12 @@ from lumbra.adapters.eventbus.in_memory import InMemoryEventBus
 from lumbra.adapters.eventstore.in_memory import InMemoryEventStore
 from lumbra.adapters.permissions.static import StaticPermissionAdapter
 from lumbra.domain.events import EventRegistry
-from lumbra.kernel.executions import ExecutionNotFoundError, ExecutionStatus, ExecutionTracker
+from lumbra.kernel.executions import (
+    ExecutionNotFoundError,
+    ExecutionStatus,
+    ExecutionTracker,
+    StepMetric,
+)
 from lumbra.kernel.kernel import LumbraKernel
 from lumbra.ports.event_bus import ConsumerSpec
 from lumbra.ports.skills import Skill, SkillContext, SkillInput, SkillManifest, SkillOutput
@@ -104,6 +109,62 @@ class TestExecutions:
         assert filha.parent_execution_id == pai.id
         assert filha.correlation_id == pai.correlation_id  # árvore correlacionada
         assert filha.id != pai.id
+
+    async def test_arvore_reune_pai_e_filhos(self, kernel_tracker):
+        """A3: tree() monta a árvore completa a partir da raiz."""
+        _kernel, tracker = kernel_tracker
+        raiz = tracker.start_skill("test.echo", {}, subject="dev", user_id=None)
+        await tracker.wait(raiz.id)
+        f1 = tracker.start_skill(
+            "test.echo", {}, subject="dev", user_id=None, parent_execution_id=raiz.id
+        )
+        f2 = tracker.start_skill(
+            "test.echo", {}, subject="dev", user_id=None, parent_execution_id=raiz.id
+        )
+        await tracker.wait(f1.id)
+        await tracker.wait(f2.id)
+        neto = tracker.start_skill(
+            "test.echo", {}, subject="dev", user_id=None, parent_execution_id=f1.id
+        )
+        await tracker.wait(neto.id)
+
+        arvore = tracker.tree(raiz.id)
+        assert arvore.execution.id == raiz.id
+        assert {c.execution.id for c in arvore.children} == {f1.id, f2.id}
+        ramo = next(c for c in arvore.children if c.execution.id == f1.id)
+        assert [n.execution.id for n in ramo.children] == [neto.id]
+
+    async def test_rollup_soma_a_subarvore(self, kernel_tracker):
+        """A3: o custo da raiz inclui o trabalho delegado aos filhos."""
+        _kernel, tracker = kernel_tracker
+        raiz = tracker.start_skill("test.echo", {}, subject="dev", user_id=None)
+        await tracker.wait(raiz.id)
+        filho = tracker.start_skill(
+            "test.echo", {}, subject="dev", user_id=None, parent_execution_id=raiz.id
+        )
+        await tracker.wait(filho.id)
+
+        tracker.add_step(raiz.id, StepMetric(name="planejar", cost_usd=0.01, tokens_in=100))
+        tracker.add_step(filho.id, StepMetric(name="buscar", cost_usd=0.02, tokens_out=50))
+
+        total = tracker.rollup(raiz.id)
+        assert total.executions == 2
+        assert total.steps == 2
+        assert total.cost_usd == pytest.approx(0.03)
+        assert total.tokens_in == 100
+        assert total.tokens_out == 50
+
+    async def test_cancelamento_em_cascata(self, kernel_tracker):
+        """A3: cancelar a raiz cancela a subárvore inteira."""
+        _kernel, tracker = kernel_tracker
+        raiz = tracker.start_skill("test.slow", {}, subject="dev", user_id=None)
+        filho = tracker.start_skill(
+            "test.slow", {}, subject="dev", user_id=None, parent_execution_id=raiz.id
+        )
+        await asyncio.sleep(0.05)
+        assert tracker.cancel_tree(raiz.id) == 2  # raiz + filho sinalizados
+        assert (await tracker.wait(raiz.id)).status is ExecutionStatus.CANCELLED
+        assert (await tracker.wait(filho.id)).status is ExecutionStatus.CANCELLED
 
     async def test_failure_captures_traceback(self, kernel_tracker):
         _kernel, tracker = kernel_tracker

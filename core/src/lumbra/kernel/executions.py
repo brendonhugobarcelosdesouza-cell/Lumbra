@@ -53,6 +53,36 @@ class ExecutionStatus(StrEnum):
     TIMEOUT = "timeout"
 
 
+class StepMetric(BaseModel):
+    """Contabilidade de UMA etapa dentro de uma execução (ADR-059).
+
+    Uma etapa é um passo observável do trabalho (uma skill chamada por um
+    agente, um estágio, uma chamada de modelo). Tempo/custo/tokens permitem o
+    rollup da subárvore; ``explanation_ref`` liga à explicação daquele passo."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    duration_ms: float = 0.0
+    cost_usd: float = 0.0
+    tokens_in: int = 0
+    tokens_out: int = 0
+    explanation_ref: str | None = None
+
+
+class BudgetUsage(BaseModel):
+    """Soma de uma subárvore de execução — o que a raiz realmente custou."""
+
+    model_config = ConfigDict(frozen=True)
+
+    duration_ms: float = 0.0
+    cost_usd: float = 0.0
+    tokens_in: int = 0
+    tokens_out: int = 0
+    steps: int = 0
+    executions: int = 0
+
+
 class ExecutionRecord(BaseModel):
     model_config = ConfigDict(frozen=False)  # tracker atualiza in-place
 
@@ -78,11 +108,22 @@ class ExecutionRecord(BaseModel):
     cancel_reason: str | None = None
     cancelled_by: str | None = None
     completed_steps: list[str] = Field(default_factory=list)
+    # contabilidade por etapa (ADR-059): tempo/custo/tokens/explicação
+    step_metrics: list[StepMetric] = Field(default_factory=list)
 
     @property
     def is_failure(self) -> bool:
         """Cancelamento e timeout não contam como falha do sistema."""
         return self.status is ExecutionStatus.FAILED
+
+
+class ExecutionNode(BaseModel):
+    """Um nó da árvore de execução: o registro e seus filhos (recursivo)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    execution: ExecutionRecord
+    children: tuple[ExecutionNode, ...] = ()
 
 
 class ExecutionNotFoundError(Exception):
@@ -232,6 +273,66 @@ class ExecutionTracker:
                 correlation_id=record.correlation_id,
             )
         )
+
+    # ------------------------------------------------------------ árvore (ADR-059)
+
+    def add_step(self, execution_id: UUID, metric: StepMetric) -> None:
+        """Registra a contabilidade de uma etapa na execução (tempo/custo/tokens)."""
+        self.get(execution_id).step_metrics.append(metric)
+
+    def children_of(self, execution_id: UUID) -> list[ExecutionRecord]:
+        return [r for r in self._records if r.parent_execution_id == execution_id]
+
+    def tree(self, root_execution_id: UUID) -> ExecutionNode:
+        """Árvore completa a partir da raiz (execução + subexecuções)."""
+        raiz = self.get(root_execution_id)
+        return ExecutionNode(
+            execution=raiz,
+            children=tuple(self.tree(f.id) for f in self.children_of(root_execution_id)),
+        )
+
+    def rollup(self, root_execution_id: UUID) -> BudgetUsage:
+        """Soma tempo/custo/tokens/passos de TODA a subárvore — o que a raiz
+        custou de fato, incluindo o trabalho delegado."""
+        raiz = self.get(root_execution_id)
+        duracao = raiz.duration_ms or 0.0
+        custo = sum(s.cost_usd for s in raiz.step_metrics)
+        entrada = sum(s.tokens_in for s in raiz.step_metrics)
+        saida = sum(s.tokens_out for s in raiz.step_metrics)
+        passos = len(raiz.step_metrics)
+        execucoes = 1
+        for filho in self.children_of(root_execution_id):
+            sub = self.rollup(filho.id)
+            duracao += sub.duration_ms
+            custo += sub.cost_usd
+            entrada += sub.tokens_in
+            saida += sub.tokens_out
+            passos += sub.steps
+            execucoes += sub.executions
+        return BudgetUsage(
+            duration_ms=round(duracao, 2),
+            cost_usd=custo,
+            tokens_in=entrada,
+            tokens_out=saida,
+            steps=passos,
+            executions=execucoes,
+        )
+
+    def cancel_tree(
+        self,
+        root_execution_id: UUID,
+        *,
+        reason: CancelReason = CancelReason.USER,
+        requested_by: str = "console",
+    ) -> int:
+        """Cancelamento em CASCATA: cancela a raiz e toda a subárvore. Devolve
+        quantas execuções foram efetivamente sinalizadas."""
+        cancelados = (
+            1 if self.cancel(root_execution_id, reason=reason, requested_by=requested_by) else 0
+        )
+        for filho in self.children_of(root_execution_id):
+            cancelados += self.cancel_tree(filho.id, reason=reason, requested_by=requested_by)
+        return cancelados
 
     # ------------------------------------------------------------ consultas/ações
 
