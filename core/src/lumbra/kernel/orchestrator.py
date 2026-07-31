@@ -63,6 +63,7 @@ class Orchestrator:
         rules: Mapping[str, str] | None = None,
         planner: PlannerPort | None = None,
         plan_runner: PlanRunner | None = None,
+        llm_planner: PlannerPort | None = None,
         permissions: PermissionPort | None = None,
         user_scopes: frozenset[str] | None = None,
     ) -> None:
@@ -79,6 +80,8 @@ class Orchestrator:
         # explicitamente em vez de improvisar)
         self._planner = planner
         self._plan_runner = plan_runner
+        # camada 4 (A9): só entra quando a 3 não soube. None = desligada.
+        self._llm_planner = llm_planner
         # camada 1: intenção conhecida → capability (atalho explícito)
         self._rules: dict[str, str] = dict(rules or {})
 
@@ -285,13 +288,38 @@ class Orchestrator:
             raise OrchestrationError(
                 "planejamento indisponível: nenhum PlannerPort/PlanRunner configurado"
             )
-        plano = await self._planner.plan(goal, skills=self._skills.manifests())
-        # camada 3 é determinística; só a 4 (LLM Planner, A9) não será
-        sem_ia = type(self._planner).__name__ != "LLMPlanner"
+        manifestos = self._skills.manifests()
+        plano = await self._planner.plan(goal, skills=manifestos)
+        planner_usado = self._planner
+        sem_ia = True
+
+        # camada 4 (A9): a IA só entra se a camada 3 NÃO soube planejar.
+        if not plano.steps and self._llm_planner is not None:
+            self._decisions.record(
+                DecisionRecord(
+                    kind=DecisionKind.FALLBACK,
+                    chosen=type(self._llm_planner).__name__,
+                    candidates=(
+                        Candidate(
+                            ref=type(self._planner).__name__,
+                            reason="não soube decompor o objetivo",
+                        ),
+                    ),
+                    reason="camadas determinísticas esgotadas — recorrendo ao planner de IA",
+                    algorithm="fallback da camada 3 para a 4",
+                    deterministic=True,  # a DECISÃO de recorrer à IA é determinística
+                    correlation_id=ctx.correlation_id,
+                    inputs_used={"goal": goal},
+                )
+            )
+            plano = await self._llm_planner.plan(goal, skills=manifestos)
+            planner_usado = self._llm_planner
+            sem_ia = False
+
         self._decisions.record(
             DecisionRecord(
                 kind=DecisionKind.PLANNING,
-                chosen=type(self._planner).__name__,
+                chosen=type(planner_usado).__name__,
                 candidates=tuple(Candidate(ref=s.skill, reason=s.rationale) for s in plano.steps),
                 reason=f"objetivo multi-passo: {len(plano.steps)} passo(s) planejado(s)",
                 algorithm="PlannerPort + PlanRunner (DAG com falha parcial)",
