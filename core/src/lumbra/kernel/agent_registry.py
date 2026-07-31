@@ -81,9 +81,7 @@ class AgentRegistry:
     def manifests(self) -> list[AgentManifest]:
         return [self.get(aid).manifest for aid in self._agents]
 
-    def find(
-        self, *, capability: str | None = None, tag: str | None = None
-    ) -> list[AgentManifest]:
+    def find(self, *, capability: str | None = None, tag: str | None = None) -> list[AgentManifest]:
         resultado = self.manifests()
         if capability is not None:
             resultado = [m for m in resultado if capability in m.capabilities]
