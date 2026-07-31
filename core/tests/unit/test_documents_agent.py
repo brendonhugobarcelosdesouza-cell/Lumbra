@@ -145,6 +145,60 @@ class TestSandbox:
                 await agente.handle({"query": "2"}, _ctx(), sandbox=sandbox)
 
 
+class TestSandboxNoOrchestrator:
+    """A7.6: o isolamento vale no caminho REAL (Orchestrator → agente), não só
+    quando o teste monta o sandbox à mão."""
+
+    async def test_orquestrador_executa_com_sandbox(self):
+        k = await _kernel()
+        r = await k.orchestrator.execute(CAPABILITY, {"query": "fatura"}, ctx=_ctx())
+        assert r.provider_ref == "documents-agent"
+        assert r.output["mode"] == "hybrid"  # funcionou dentro do sandbox
+
+    async def test_escopo_fora_do_manifesto_e_negado_no_caminho_real(self):
+        """O agente declara read:documents; uma skill que exige outro escopo é
+        barrada pelo sandbox mesmo com o PermissionPort liberando tudo."""
+        k = await _kernel()
+        # skill que o agente NÃO declarou, exigindo escopo diferente
+        await k.skills.register(
+            Skill(
+                manifest=SkillManifest(
+                    name="email.send",
+                    description="envia email",
+                    provider="kernel",
+                    required_scopes=("write:email",),
+                ),
+                input_model=_FindIn,
+                output_model=_FindOut,
+                handler=_find,
+            )
+        )
+        agente = k.agents.get("documents-agent")
+        fabrica = SandboxFactory(permissions=k.permissions)
+        with fabrica.create(
+            agent_id="documents-agent",
+            agent_scopes=frozenset(agente.manifest.required_scopes),
+            user_scopes=frozenset({"read:documents", "write:email"}),
+            limits=agente.manifest.limits,
+        ) as sandbox:
+            escopado = k.skills.scoped(sandbox.permissions)
+            with pytest.raises(SkillPermissionDeniedError):
+                await escopado.execute("email.send", {"query": "x"}, context=_ctx())
+
+    async def test_vista_escopada_compartilha_as_skills(self):
+        k = await _kernel()
+        fabrica = SandboxFactory(permissions=k.permissions)
+        with fabrica.create(
+            agent_id="documents-agent",
+            agent_scopes=frozenset({"read:documents"}),
+            user_scopes=frozenset({"read:documents"}),
+            limits=AgentLimits(),
+        ) as sandbox:
+            escopado = k.skills.scoped(sandbox.permissions)
+            # mesma skill, sem re-registrar
+            assert escopado.get(SKILL) is k.skills.get(SKILL)
+
+
 class TestModosDeFalha:
     async def test_escopo_negado_barra_a_skill(self):
         """O usuário não concedeu read:documents: a skill é negada mesmo com o

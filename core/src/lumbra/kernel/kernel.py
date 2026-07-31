@@ -135,6 +135,7 @@ class LumbraKernel:
             decisions=self.decisions,
             planner=self.planner,
             plan_runner=self.plan_runner,
+            permissions=permissions,  # habilita o sandbox por execução (A7.6)
         )
         self._producer = producer
         self._modules: dict[str, LumbraModule] = {}

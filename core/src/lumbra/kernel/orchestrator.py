@@ -25,8 +25,10 @@ from lumbra.kernel.agent_registry import AgentRegistry
 from lumbra.kernel.capability_registry import CapabilityRegistry
 from lumbra.kernel.decisions import Candidate, DecisionEngine, DecisionKind, DecisionRecord
 from lumbra.kernel.planning import PlanResult, PlanRunner
+from lumbra.kernel.sandbox import AgentSandbox
 from lumbra.kernel.skill_registry import SkillRegistry
 from lumbra.ports.capabilities import CapabilityError, ProviderKind
+from lumbra.ports.permissions import PermissionPort
 from lumbra.ports.planner import PlannerPort
 from lumbra.ports.skills import SkillContext
 from lumbra.shared.logging import get_logger
@@ -61,11 +63,18 @@ class Orchestrator:
         rules: Mapping[str, str] | None = None,
         planner: PlannerPort | None = None,
         plan_runner: PlanRunner | None = None,
+        permissions: PermissionPort | None = None,
+        user_scopes: frozenset[str] | None = None,
     ) -> None:
         self._skills = skills
         self._capabilities = capabilities
         self._agents = agents
         self._decisions = decisions
+        # sandbox por execução de agente (A6/A7.6). Sem permissions, o agente
+        # roda sem isolamento (compatibilidade); com, escopo e orçamento valem.
+        self._permissions = permissions
+        # escopos do usuário; None = tudo que o agente declarar (dev)
+        self._user_scopes = user_scopes
         # camada 3: planejamento multi-passo (opcional; sem planner, achieve falha
         # explicitamente em vez de improvisar)
         self._planner = planner
@@ -152,9 +161,7 @@ class Orchestrator:
             saida = await self._skills.execute(provider.ref, payload, context=ctx)
             output = saida.model_dump(mode="json")
         else:
-            agente = self._agents.get(provider.ref)
-            resultado = await agente.handle(payload, ctx)
-            output = resultado.output
+            output = await self._executar_agente(provider.ref, payload, ctx)
 
         return OrchestrationResult(
             capability=capability_id,
@@ -163,6 +170,42 @@ class Orchestrator:
             layer=camada,
             output=output,
         )
+
+    async def _executar_agente(
+        self, agent_id: str, payload: Mapping[str, Any], ctx: SkillContext
+    ) -> dict[str, Any]:
+        """Executa um agente DENTRO do seu sandbox (A6): escopo intersectado,
+        orçamento próprio e estado temporário descartado ao final — sempre,
+        inclusive em erro."""
+        agente = self._agents.get(agent_id)
+        manifesto = agente.manifest
+        if self._permissions is None:  # sem isolamento configurado (compat)
+            resultado = await agente.handle(payload, ctx)
+            return resultado.output
+
+        declarados = frozenset(manifesto.required_scopes)
+        # escopo efetivo = min(usuário, agente). Sem escopos do usuário
+        # declarados, vale o que o agente pede (o PermissionPort ainda decide).
+        concedidos = declarados if self._user_scopes is None else declarados & self._user_scopes
+        with AgentSandbox(
+            agent_id=manifesto.id,
+            permissions=self._permissions,
+            scopes=concedidos,
+            limits=manifesto.limits,
+            cancellation=ctx.cancellation,
+        ) as sandbox:
+            # o agente executa skills pela VISTA escopada: não consegue mais do
+            # que o manifesto declarou, mesmo que o port de origem permita
+            resultado = await agente.handle(payload, ctx, sandbox=sandbox)
+            gasto = sandbox.budget.snapshot()
+            _log.info(
+                "agent_executed",
+                agent=manifesto.id,
+                scopes=sorted(concedidos),
+                steps=gasto.steps,
+                tokens=gasto.tokens,
+            )
+            return resultado.output
 
     async def achieve(self, goal: str, *, ctx: SkillContext) -> PlanResult:
         """Camada 3: objetivo MULTI-PASSO via Planner + PlanRunner existentes.

@@ -55,12 +55,16 @@ class DocumentsAgent(AgentPort):
     ) -> AgentResult:
         """Executa a busca. Com sandbox, cada passo debita orçamento e o
         cancelamento é observado; sem sandbox, roda direto (compatibilidade)."""
+        skills = self._skills
         if sandbox is not None:
             sandbox.budget.charge(steps=1)
+            # executa pela VISTA escopada do registro: o agente não consegue
+            # mais permissão do que o sandbox concedeu (A6/A7.6)
+            skills = self._skills.scoped(sandbox.permissions)
         if ctx.cancellation is not None:
             ctx.cancellation.raise_if_cancelled()
 
-        saida = await self._skills.execute(SKILL, dict(request), context=ctx)
+        saida = await skills.execute(SKILL, dict(request), context=ctx)
         hits: tuple[dict[str, Any], ...] = saida.hits  # type: ignore[attr-defined]
         return AgentResult(
             output={"hits": list(hits), "mode": saida.mode},  # type: ignore[attr-defined]

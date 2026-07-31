@@ -77,6 +77,19 @@ class SkillRegistry:
                 )
             )
 
+    def scoped(self, permissions: PermissionPort) -> SkillRegistry:
+        """Uma VISTA do registro com permissões mais restritas (A6/A7.6).
+
+        Compartilha as MESMAS skills (nada é re-registrado) e troca só o port de
+        permissão — é assim que o sandbox de um agente executa skills sem que o
+        agente possa ampliar o que o usuário concedeu. Só faz sentido com um
+        port que restringe (``ScopedPermissions``); o registro continua único."""
+        vista = SkillRegistry(
+            permissions, publish=self._publish, explain=self._explain, approval=self._approval
+        )
+        vista._skills = self._skills  # mesma fonte de skills, outra permissão
+        return vista
+
     # ------------------------------------------------------------ discovery
 
     def get(self, name: str) -> Skill:

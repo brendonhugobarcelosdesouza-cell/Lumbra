@@ -121,8 +121,20 @@ class AgentPort(ABC):
     def manifest(self) -> AgentManifest: ...
 
     @abstractmethod
-    async def handle(self, request: Mapping[str, Any], ctx: SkillContext) -> AgentResult:
-        """Executa a competência do agente e devolve o resultado."""
+    async def handle(
+        self,
+        request: Mapping[str, Any],
+        ctx: SkillContext,
+        *,
+        sandbox: Any | None = None,
+    ) -> AgentResult:
+        """Executa a competência do agente e devolve o resultado.
+
+        ``sandbox`` (``kernel.sandbox.AgentSandbox``) chega quando o Orchestrator
+        executa o agente: traz escopo intersectado, orçamento a debitar e estado
+        temporário descartável. Tipado como ``Any`` para não inverter a
+        dependência (ports não conhecem o kernel); agentes que não precisam de
+        isolamento simplesmente o ignoram."""
 
 
 # canário anti-truncamento

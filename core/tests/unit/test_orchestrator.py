@@ -57,8 +57,16 @@ class _Agente(AgentPort):
     def manifest(self) -> AgentManifest:
         return self._manifest
 
-    async def handle(self, request: Mapping[str, Any], ctx: SkillContext) -> AgentResult:
-        out = await self._kernel.skills.execute("test.echo", request, context=ctx)
+    async def handle(
+        self, request: Mapping[str, Any], ctx: SkillContext, *, sandbox: Any | None = None
+    ) -> AgentResult:
+        # com sandbox (A7.6), executa pela vista escopada do registro
+        skills = (
+            self._kernel.skills
+            if sandbox is None
+            else self._kernel.skills.scoped(sandbox.permissions)
+        )
+        out = await skills.execute("test.echo", request, context=ctx)
         return AgentResult(output={"via_agente": out.model_dump(mode="json")})
 
 
