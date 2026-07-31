@@ -46,6 +46,10 @@ from lumbra.adapters.users.in_memory import InMemoryUserStore
 from lumbra.adapters.users.postgres import PostgresUserStore
 from lumbra.agents.documents import CAPABILITY as DOCUMENTS_SEARCH
 from lumbra.agents.documents import DocumentsAgent
+from lumbra.agents.memory import CAPABILITY as MEMORY_SEARCH
+from lumbra.agents.memory import MemoryAgent
+from lumbra.agents.research import CAPABILITY as RESEARCH_GATHER
+from lumbra.agents.research import ResearchAgent
 from lumbra.api.agents import build_agents_router
 from lumbra.api.app import create_app
 from lumbra.api.auth import AuthServices
@@ -224,7 +228,24 @@ def create_default_app() -> FastAPI:
                 required_scopes=("read:documents",),
             )
         )
+        kernel.capabilities.register_capability(
+            CapabilitySpec(
+                id=MEMORY_SEARCH,
+                description="Recupera memórias relevantes do usuário",
+                required_scopes=("read:memory",),
+            )
+        )
+        kernel.capabilities.register_capability(
+            CapabilitySpec(
+                id=RESEARCH_GATHER,
+                description="Reúne evidência dos documentos e das memórias (delega)",
+                required_scopes=("read:documents", "read:memory"),
+            )
+        )
         kernel.agents.register(DocumentsAgent(kernel.skills))
+        kernel.agents.register(MemoryAgent(kernel.skills))
+        # o de pesquisa DELEGA aos dois acima — precisa do orquestrador
+        kernel.agents.register(ResearchAgent(kernel.orchestrator))
         if not settings.is_production:
             from lumbra.api.auth import make_require_subject
             from lumbra.api.dev import build_dev_router
