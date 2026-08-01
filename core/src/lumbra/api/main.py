@@ -18,6 +18,7 @@ from lumbra.adapters.ai.anthropic import AnthropicChatProvider
 from lumbra.adapters.ai.fastembed_local import FastEmbedProvider
 from lumbra.adapters.ai.gateway import AIGateway
 from lumbra.adapters.ai.ollama import OllamaChatProvider
+from lumbra.adapters.approvals.in_memory import InMemoryApprovalStore
 from lumbra.adapters.attachments.filesystem import FilesystemBlobStore
 from lumbra.adapters.attachments.in_memory import InMemoryAttachmentStore
 from lumbra.adapters.attachments.postgres import PostgresAttachmentStore
@@ -54,6 +55,7 @@ from lumbra.agents.research import CAPABILITY as RESEARCH_GATHER
 from lumbra.agents.research import ResearchAgent
 from lumbra.api.agents import build_agents_router
 from lumbra.api.app import create_app
+from lumbra.api.approvals import build_approvals_router
 from lumbra.api.auth import AuthServices
 from lumbra.api.chat import build_chat_router
 from lumbra.api.devices import build_devices_router
@@ -67,6 +69,8 @@ from lumbra.context.providers import (
     PlaybookContextProvider,
 )
 from lumbra.domain.events import EventRegistry
+from lumbra.kernel.approval import RecordingApprovalPolicy
+from lumbra.kernel.approval_service import ApprovalService
 from lumbra.kernel.core_module import KernelCoreModule
 from lumbra.kernel.executions import ExecutionTracker
 from lumbra.kernel.kernel import LumbraKernel
@@ -94,6 +98,7 @@ from lumbra.ports.event_bus import EventBusPort
 from lumbra.ports.event_store import EventStorePort
 from lumbra.ports.memory import MemoryStorePort
 from lumbra.ports.playbooks import PlaybookStorePort
+from lumbra.ports.skills import RiskLevel
 from lumbra.ports.users import UserStorePort
 from lumbra.shared.config import Settings, get_settings
 
@@ -122,12 +127,18 @@ def create_default_app() -> FastAPI:
         event_store = InMemoryEventStore()
         users = InMemoryUserStore()
 
+    # Human-in-the-Loop (ADR-024): o que passa do teto vira pedido pendente
+    # em vez de erro sem saída. Com o teto padrão (critical) nada muda.
+    approval_store = InMemoryApprovalStore()
     kernel = LumbraKernel(
         events=events,
         bus=bus,
         event_store=event_store,
         # dev: permite tudo EXPLICITAMENTE; produção usará consents (doc 18)
         permissions=StaticPermissionAdapter(default_allow=not settings.is_production),
+        approval=RecordingApprovalPolicy(
+            approval_store, auto_ate=RiskLevel(settings.security.auto_approve_ate)
+        ),
     )
     kernel.register_module(KernelCoreModule())
 
@@ -309,6 +320,7 @@ def create_default_app() -> FastAPI:
         build_devices_router(kernel, device_store, auth.tokens),
         build_agents_router(kernel, _mrs(auth.tokens)),
         build_playbooks_router(kernel, playbook_store, _mrs(auth.tokens)),
+        build_approvals_router(ApprovalService(kernel.skills, approval_store), _mrs(auth.tokens)),
     ]
     return create_app(
         settings, kernel=kernel, auth=auth, dev_router=dev_router, extra_routers=extra_routers

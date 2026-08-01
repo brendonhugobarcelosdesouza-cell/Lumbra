@@ -60,6 +60,11 @@ class SecuritySettings(BaseModel):
     # produção, o Nó libera "*" automaticamente; em produção, só o que
     # estiver aqui (ex.: LUMBRA_SECURITY__CORS_ALLOW_ORIGINS=["https://app…"]).
     cors_allow_origins: tuple[str, ...] = ()
+    # teto de aprovação automática (ADR-024): ações com risco ATÉ este nível
+    # rodam sem perguntar; acima, viram pedido pendente em /api/v1/approvals.
+    # Default 'critical' = aprova tudo, para não mudar comportamento de quem
+    # já usa. Baixar para 'low' faz o gate morder de verdade.
+    auto_approve_ate: Literal["low", "medium", "high", "critical"] = "critical"
 
 
 class AISettings(BaseModel):

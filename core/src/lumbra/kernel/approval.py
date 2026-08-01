@@ -17,8 +17,14 @@ from lumbra.ports.approval import (
     ApprovalOutcome,
     ApprovalPolicyPort,
     ApprovalRequest,
+    ApprovalStorePort,
+    ApprovalTicket,
 )
 from lumbra.ports.skills import RiskLevel
+from lumbra.shared.ids import uuid7
+from lumbra.shared.logging import get_logger
+
+_log = get_logger("lumbra.kernel.approval")
 
 # ordem explícita dos níveis (StrEnum não é ordenável por padrão)
 _ORDEM: dict[RiskLevel, int] = {
@@ -42,6 +48,55 @@ class AutoApprovePolicy(ApprovalPolicyPort):
         return ApprovalOutcome(
             decision=ApprovalDecision.NEEDS_CONFIRMATION,
             reason=f"risco {request.risk_level.value} acima do teto de aprovação automática",
+        )
+
+
+class RecordingApprovalPolicy(ApprovalPolicyPort):
+    """Mesma decisão da ``AutoApprovePolicy``, mas o "precisa confirmar" vira
+    um TICKET pendente em vez de um beco sem saída.
+
+    Sem isso o gate era decorativo: a ação era barrada e a intenção do usuário
+    se perdia — ele nem ficava sabendo o que ficou por fazer. Aqui o pedido
+    sobrevive à recusa e pode ser executado quando o humano disser sim.
+
+    Pedido sem ``user_id`` não vira ticket (não há a quem perguntar): a ação
+    continua barrada, como antes.
+    """
+
+    def __init__(
+        self, store: ApprovalStorePort, *, auto_ate: RiskLevel = RiskLevel.CRITICAL
+    ) -> None:
+        self._store = store
+        self._base = AutoApprovePolicy(auto_ate=auto_ate)
+
+    async def decide(self, request: ApprovalRequest) -> ApprovalOutcome:
+        outcome = await self._base.decide(request)
+        if outcome.decision is not ApprovalDecision.NEEDS_CONFIRMATION:
+            return outcome
+        if request.user_id is None:
+            return outcome
+        ticket = await self._store.add(
+            ApprovalTicket(
+                id=uuid7(),
+                user_id=request.user_id,
+                action=request.action,
+                subject=request.subject,
+                risk_level=request.risk_level,
+                reason=request.reason,
+                payload=request.payload,
+            )
+        )
+        _log.info(
+            "approval_pending",
+            ticket=str(ticket.id),
+            action=request.action,
+            subject=request.subject,
+            risk=request.risk_level.value,
+        )
+        # o id vai na razão: é o que o cliente mostra ao usuário para decidir
+        return ApprovalOutcome(
+            decision=ApprovalDecision.NEEDS_CONFIRMATION,
+            reason=f"{outcome.reason} (aprovação pendente: {ticket.id})",
         )
 
 

@@ -90,6 +90,20 @@ class SkillRegistry:
         vista._skills = self._skills  # mesma fonte de skills, outra permissão
         return vista
 
+    def with_approval(self, approval: ApprovalPolicyPort) -> SkillRegistry:
+        """Uma VISTA do registro com outra política de aprovação (L2.0).
+
+        Mesma mecânica do ``scoped()``: troca UM port, compartilha as skills.
+        Existe para o caminho da confirmação humana — quando o usuário aprova
+        um ticket, a reexecução não pode cair no mesmo gate que a barrou, ou
+        o "sim" nunca sairia do lugar. As permissões continuam valendo: o
+        aprovado é a AÇÃO, não o escopo."""
+        vista = SkillRegistry(
+            self._permissions, publish=self._publish, explain=self._explain, approval=approval
+        )
+        vista._skills = self._skills
+        return vista
+
     # ------------------------------------------------------------ discovery
 
     def get(self, name: str) -> Skill:
@@ -155,6 +169,10 @@ class SkillRegistry:
                     subject=context.subject,
                     risk_level=manifest.risk_level,
                     reason=f"execução solicitada por {context.subject}",
+                    # dono e pedido completo: é o que permite reexecutar
+                    # exatamente isto quando o humano confirmar
+                    user_id=context.user_id,
+                    payload=dict(payload),
                 )
             )
             _log.info(

@@ -494,3 +494,11 @@ em docs/26-arquitetura-agentes.md. -->
 **Decisão.** Orchestrator fino, em 4 camadas acionadas em ordem, parando na primeira que resolve: (1) regras determinísticas; (2) Capability Router (resolve 1 capability); (3) Planner existente (`KeywordPlanner` + `PlanRunner`, hoje dormentes) para multi-passo; (4) LLM Planner (mesmo `PlannerPort`) só quando o determinístico não sabe. Cada camada usada é registrada no Decision Engine.
 
 **Consequências.** (+) simples quando o problema é simples; previsível, testável, offline; acorda o Planner já construído. (−) as regras determinísticas precisam de manutenção conforme surgem intenções novas; aceitável e explícito.
+
+## ADR-063 — Caixa de aprovações: o "precisa confirmar" vira pedido pendente, e o sim executa ✅
+
+**Contexto.** O gate de aprovação (ADR-024, A0.2) existia mas era decorativo: ação de risco acima do teto era barrada com erro e a intenção do usuário morria ali. Ele não via o que ficou por fazer, nem tinha como dizer sim. Sem isso, baixar o teto tornaria a plataforma inutilizável, e a memória procedural criada por agentes (L2) só teria dois caminhos ruins: gravar em silêncio (a lição da memória episódica envenenada) ou falhar sempre.
+
+**Decisão.** `NEEDS_CONFIRMATION` passa a criar um `ApprovalTicket` com a ação E o payload originais. `/api/v1/approvals` expõe a fila, e aprovar **executa** o pedido guardado — confirmação sem reexecução seria teatro. Três invariantes: a decisão é única (aprovar/rejeitar de novo levanta); aprovar libera a AÇÃO, não o escopo (a reexecução troca só a política, mantém as permissões); pedido sem `user_id` não vira ticket, pois não há a quem perguntar. O teto vem de `LUMBRA_SECURITY__AUTO_APPROVE_ATE`, default `critical` (aprova tudo) para não mudar o comportamento de quem já usa.
+
+**Consequências.** (+) o 409 da API vira acionável, e baixar o teto passa a ser uma decisão de configuração, não uma quebra; destrava a criação automática de playbooks com porteiro real. (−) a fila é in-memory: um pedido pendente não sobrevive ao restart do Nó. É deliberado — confirmação é interação viva, e ticket órfão seria pior que ausente; o port permite trocar por Postgres se aprovação assíncrona (agente propõe hoje, usuário decide amanhã) provar-se necessária.
