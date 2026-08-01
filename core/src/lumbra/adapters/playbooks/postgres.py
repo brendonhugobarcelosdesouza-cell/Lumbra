@@ -8,9 +8,10 @@ banco faz stemming e ignora stopwords de brinde.
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Float, func, literal_column, select, update
+from sqlalchemy import ColumnClause, Float, func, literal_column, select, update
 
 from lumbra.adapters.persistence.database import Database
 from lumbra.adapters.persistence.fulltext import tsquery_or
@@ -21,7 +22,7 @@ from lumbra.ports.playbooks import Playbook, PlaybookOrigin, PlaybookStorePort
 # lá 2.0 contra 0.5). Aqui em escala 0..1 porque ts_rank recusa peso fora
 # desse intervalo; o que importa para a ordenação é a razão, não a escala.
 # Literal SQL tipado: ts_rank exige real[], e um bind param chega como texto.
-_PESOS = literal_column("'{0.0, 0.0, 0.25, 1.0}'::real[]")
+_PESOS: ColumnClause[Any] = literal_column("'{0.0, 0.0, 0.25, 1.0}'::real[]")
 
 
 def _to_domain(row: PlaybookModel) -> Playbook:
