@@ -29,6 +29,22 @@ from sqlalchemy.sql import func
 
 EMBEDDING_DIM = 384  # paraphrase-multilingual-MiniLM (ADR-025); mudar exige migração + reindex
 
+# Índice textual PONDERADO dos playbooks: 'quando usar' e título entram com
+# peso A, o corpo (passos/armadilhas) com peso B. Traduz para SQL a regra que
+# o store in-memory aplica na mão — o gatilho é escrito para casar com a
+# intenção, os passos são o conteúdo. Definido aqui e importado pela migração
+# para que esquema e modelo não possam divergir em silêncio.
+#
+# O corpo vem da coluna ``search_body`` (passos e armadilhas achatados em
+# texto) e não dos arrays: ``array_to_string`` é STABLE, não IMMUTABLE, e o
+# Postgres recusa coluna gerada com expressão não-imutável. Achatar na
+# escrita é seguro porque playbook não é editado — só criado e apagado.
+PLAYBOOK_TSV_EXPR = (
+    "setweight(to_tsvector('portuguese', coalesce(title, '') || ' ' "
+    "|| coalesce(when_to_use, '')), 'A') || "
+    "setweight(to_tsvector('portuguese', coalesce(search_body, '')), 'B')"
+)
+
 
 class Base(DeclarativeBase):
     type_annotation_map: ClassVar = {dict[str, Any]: JSONB}
@@ -208,6 +224,32 @@ class MemoryItemModel(Base):
     last_accessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PlaybookModel(Base):
+    """Memória PROCEDURAL (L1.6). O ``tsv`` é PONDERADO: o que decide a
+    recuperação é 'quando usar' (peso A); os passos são corpo (peso B)."""
+
+    __tablename__ = "playbooks"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    when_to_use: Mapped[str] = mapped_column(Text, nullable=False)
+    steps: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default="{}")
+    pitfalls: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default="{}")
+    verification: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    origin: Mapped[str] = mapped_column(Text, nullable=False, server_default="user")
+    source_execution_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    uses: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # projeção de busca: passos + armadilhas achatados (ver PLAYBOOK_TSV_EXPR)
+    search_body: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    tsv: Mapped[Any | None] = mapped_column(
+        TSVECTOR,
+        Computed(PLAYBOOK_TSV_EXPR, persisted=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class ConversationModel(Base):

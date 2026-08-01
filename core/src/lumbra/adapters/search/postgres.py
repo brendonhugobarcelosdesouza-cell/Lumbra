@@ -8,7 +8,6 @@ carrega a explicação componente a componente (princípio nº 13).
 
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -17,27 +16,16 @@ from uuid import UUID
 from sqlalchemy import Float, Select, false, func, literal, select
 
 from lumbra.adapters.persistence.database import Database
+from lumbra.adapters.persistence.fulltext import tsquery_or
 from lumbra.adapters.persistence.models import ChunkModel, DocumentModel
 from lumbra.ports.search import SearchHit, SearchPort
 
 _RRF_K = 60
 _POOL = 50  # candidatos por componente antes da fusão
 
-_PALAVRA = re.compile(r"\w+", re.UNICODE)
-
-
-def _tsquery_or(query: str) -> str:
-    """Monta um tsquery TOLERANTE: termos unidos por OR, não AND.
-
-    ``websearch_to_tsquery`` exige TODOS os termos (AND), então uma
-    pergunta natural como "total desta fatura" falha se UMA palavra
-    ("desta") não está no documento — mesmo com "total" e "fatura"
-    presentes. Numa busca de recuperação queremos o oposto: qualquer termo
-    conta, e o ``ts_rank`` ordena por quantos/quão bem casam. Extraímos as
-    palavras e as unimos por ``|``; a config ``portuguese`` do
-    ``to_tsquery`` ainda faz o stemming e remove stopwords de cada uma.
-    """
-    return " | ".join(_PALAVRA.findall(query))
+# a montagem do tsquery tolerante virou decisão compartilhada da plataforma
+# (playbooks recuperam pela mesma regra); o alias mantém o nome local
+_tsquery_or = tsquery_or
 
 
 @dataclass

@@ -40,6 +40,7 @@ from lumbra.adapters.metrics.in_memory import InMemoryMetrics
 from lumbra.adapters.permissions.static import StaticPermissionAdapter
 from lumbra.adapters.persistence.database import Database
 from lumbra.adapters.playbooks.in_memory import InMemoryPlaybookStore
+from lumbra.adapters.playbooks.postgres import PostgresPlaybookStore
 from lumbra.adapters.search.postgres import PostgresSearch
 from lumbra.adapters.security.passwords import PasswordHasher
 from lumbra.adapters.security.tokens import TokenService
@@ -92,6 +93,7 @@ from lumbra.ports.document_store import DocumentRecord
 from lumbra.ports.event_bus import EventBusPort
 from lumbra.ports.event_store import EventStorePort
 from lumbra.ports.memory import MemoryStorePort
+from lumbra.ports.playbooks import PlaybookStorePort
 from lumbra.ports.users import UserStorePort
 from lumbra.shared.config import Settings, get_settings
 
@@ -174,8 +176,11 @@ def create_default_app() -> FastAPI:
 
     kernel.register_module(MemoryModule(store=memory_store, gateway=gateway))
     # memória PROCEDURAL (L1): o quarto tipo de conhecimento — como se faz.
-    # In-memory por ora (o volume é pequeno); Postgres quando o uso pedir.
-    playbook_store = InMemoryPlaybookStore()
+    # Persistente em postgres (L1.6): procedimento que evapora ao reiniciar o
+    # Nó não é conhecimento, é anotação.
+    playbook_store: PlaybookStorePort = (
+        PostgresPlaybookStore(db) if db is not None else InMemoryPlaybookStore()
+    )
     kernel.register_module(PlaybookModule(playbook_store))
     kernel.context.register(PlaybookContextProvider(kernel.skills))
     chat_module = ChatModule(
