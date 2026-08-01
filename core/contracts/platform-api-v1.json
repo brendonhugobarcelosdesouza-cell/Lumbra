@@ -1038,6 +1038,143 @@
         "title": "MemoryQueryOut",
         "type": "object"
       },
+      "PlaybookHitOut": {
+        "description": "Resultado de busca — traz o texto renderizado, pronto para contexto.",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "playbook_id": {
+            "title": "Playbook Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "uses": {
+            "default": 0,
+            "title": "Uses",
+            "type": "integer"
+          },
+          "when_to_use": {
+            "title": "When To Use",
+            "type": "string"
+          }
+        },
+        "required": [
+          "playbook_id",
+          "title",
+          "when_to_use",
+          "content",
+          "origin"
+        ],
+        "title": "PlaybookHitOut",
+        "type": "object"
+      },
+      "PlaybookOrigin": {
+        "description": "De onde veio o procedimento — muda o quanto se confia nele.",
+        "enum": [
+          "user",
+          "agent",
+          "imported"
+        ],
+        "title": "PlaybookOrigin",
+        "type": "string"
+      },
+      "PlaybookOut": {
+        "description": "Um procedimento — espelha o Playbook do domínio em tipos JSON.",
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "pitfalls": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Pitfalls",
+            "type": "array"
+          },
+          "steps": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "uses": {
+            "default": 0,
+            "title": "Uses",
+            "type": "integer"
+          },
+          "verification": {
+            "default": "",
+            "title": "Verification",
+            "type": "string"
+          },
+          "when_to_use": {
+            "title": "When To Use",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "when_to_use",
+          "origin",
+          "created_at"
+        ],
+        "title": "PlaybookOut",
+        "type": "object"
+      },
+      "PlaybookSearchOut": {
+        "properties": {
+          "hits": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PlaybookHitOut"
+            },
+            "title": "Hits",
+            "type": "array"
+          }
+        },
+        "title": "PlaybookSearchOut",
+        "type": "object"
+      },
+      "PlaybooksOut": {
+        "properties": {
+          "playbooks": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PlaybookOut"
+            },
+            "title": "Playbooks",
+            "type": "array"
+          }
+        },
+        "title": "PlaybooksOut",
+        "type": "object"
+      },
       "PolicyBody": {
         "properties": {
           "privacy": {
@@ -1417,6 +1554,72 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "WriteBody": {
+        "properties": {
+          "origin": {
+            "$ref": "#/components/schemas/PlaybookOrigin",
+            "default": "user"
+          },
+          "pitfalls": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Pitfalls",
+            "type": "array"
+          },
+          "steps": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Steps",
+            "type": "array"
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 3,
+            "title": "Title",
+            "type": "string"
+          },
+          "verification": {
+            "default": "",
+            "title": "Verification",
+            "type": "string"
+          },
+          "when_to_use": {
+            "maxLength": 500,
+            "minLength": 3,
+            "title": "When To Use",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "when_to_use",
+          "steps"
+        ],
+        "title": "WriteBody",
+        "type": "object"
+      },
+      "WriteOut": {
+        "properties": {
+          "playbook_id": {
+            "title": "Playbook Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "playbook_id",
+          "title"
+        ],
+        "title": "WriteOut",
         "type": "object"
       }
     },
@@ -2587,6 +2790,204 @@
         "summary": "Forget",
         "tags": [
           "memory"
+        ]
+      }
+    },
+    "/api/v1/playbooks": {
+      "get": {
+        "description": "Todos os procedimentos do usuário — auditável: ele é dono do que a\nplataforma aprendeu.",
+        "operationId": "list_playbooks_api_v1_playbooks_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybooksOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Playbooks",
+        "tags": [
+          "playbooks"
+        ]
+      },
+      "post": {
+        "description": "Grava um procedimento. Risco MEDIUM: passa pela política de\naprovação — 409 quando exige confirmação humana.",
+        "operationId": "write_api_v1_playbooks_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WriteBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Write",
+        "tags": [
+          "playbooks"
+        ]
+      }
+    },
+    "/api/v1/playbooks/search": {
+      "get": {
+        "operationId": "search_api_v1_playbooks_search_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": true,
+            "schema": {
+              "title": "Query",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybookSearchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Search",
+        "tags": [
+          "playbooks"
+        ]
+      }
+    },
+    "/api/v1/playbooks/{playbook_id}": {
+      "delete": {
+        "operationId": "forget_api_v1_playbooks__playbook_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playbook_id",
+            "required": true,
+            "schema": {
+              "title": "Playbook Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForgetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Forget",
+        "tags": [
+          "playbooks"
         ]
       }
     },

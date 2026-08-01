@@ -57,6 +57,7 @@ from lumbra.api.auth import AuthServices
 from lumbra.api.chat import build_chat_router
 from lumbra.api.devices import build_devices_router
 from lumbra.api.memory import build_memory_router
+from lumbra.api.playbooks import build_playbooks_router
 from lumbra.api.system import build_system_router
 from lumbra.context.providers import (
     AttachmentContextProvider,
@@ -302,6 +303,7 @@ def create_default_app() -> FastAPI:
         ),
         build_devices_router(kernel, device_store, auth.tokens),
         build_agents_router(kernel, _mrs(auth.tokens)),
+        build_playbooks_router(kernel, playbook_store, _mrs(auth.tokens)),
     ]
     return create_app(
         settings, kernel=kernel, auth=auth, dev_router=dev_router, extra_routers=extra_routers
