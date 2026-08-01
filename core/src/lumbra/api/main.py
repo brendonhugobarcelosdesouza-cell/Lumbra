@@ -74,6 +74,7 @@ from lumbra.kernel.approval_service import ApprovalService
 from lumbra.kernel.core_module import KernelCoreModule
 from lumbra.kernel.executions import ExecutionTracker
 from lumbra.kernel.kernel import LumbraKernel
+from lumbra.kernel.learning import PlaybookProposer
 from lumbra.modules.ai import AIModule
 from lumbra.modules.chat import ChatModule
 from lumbra.modules.ingestion import IngestionModule
@@ -130,6 +131,12 @@ def create_default_app() -> FastAPI:
     # Human-in-the-Loop (ADR-024): o que passa do teto vira pedido pendente
     # em vez de erro sem saída. Com o teto padrão (critical) nada muda.
     approval_store = InMemoryApprovalStore()
+    # memória PROCEDURAL (L1): o quarto tipo de conhecimento — como se faz.
+    # Persistente em postgres (L1.6): procedimento que evapora ao reiniciar o
+    # Nó não é conhecimento, é anotação.
+    playbook_store: PlaybookStorePort = (
+        PostgresPlaybookStore(db) if db is not None else InMemoryPlaybookStore()
+    )
     kernel = LumbraKernel(
         events=events,
         bus=bus,
@@ -139,6 +146,9 @@ def create_default_app() -> FastAPI:
         approval=RecordingApprovalPolicy(
             approval_store, auto_ate=RiskLevel(settings.security.auto_approve_ate)
         ),
+        # Learning Loop (L2): objetivo multi-passo cumprido vira PROPOSTA de
+        # procedimento na fila de aprovações — nunca escrita direta (ADR-064)
+        proposer=PlaybookProposer(playbook_store, approval_store),
     )
     kernel.register_module(KernelCoreModule())
 
@@ -186,12 +196,6 @@ def create_default_app() -> FastAPI:
         device_store = InMemoryDeviceStore()
 
     kernel.register_module(MemoryModule(store=memory_store, gateway=gateway))
-    # memória PROCEDURAL (L1): o quarto tipo de conhecimento — como se faz.
-    # Persistente em postgres (L1.6): procedimento que evapora ao reiniciar o
-    # Nó não é conhecimento, é anotação.
-    playbook_store: PlaybookStorePort = (
-        PostgresPlaybookStore(db) if db is not None else InMemoryPlaybookStore()
-    )
     kernel.register_module(PlaybookModule(playbook_store))
     kernel.context.register(PlaybookContextProvider(kernel.skills))
     chat_module = ChatModule(

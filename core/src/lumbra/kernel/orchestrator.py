@@ -24,6 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from lumbra.kernel.agent_registry import AgentRegistry
 from lumbra.kernel.capability_registry import CapabilityRegistry
 from lumbra.kernel.decisions import Candidate, DecisionEngine, DecisionKind, DecisionRecord
+from lumbra.kernel.learning import PlaybookProposer
 from lumbra.kernel.planning import PlanResult, PlanRunner
 from lumbra.kernel.sandbox import AgentSandbox, DelegationDeniedError
 from lumbra.kernel.skill_registry import SkillRegistry
@@ -66,6 +67,7 @@ class Orchestrator:
         llm_planner: PlannerPort | None = None,
         permissions: PermissionPort | None = None,
         user_scopes: frozenset[str] | None = None,
+        proposer: PlaybookProposer | None = None,
     ) -> None:
         self._skills = skills
         self._capabilities = capabilities
@@ -84,6 +86,9 @@ class Orchestrator:
         self._llm_planner = llm_planner
         # camada 1: intenção conhecida → capability (atalho explícito)
         self._rules: dict[str, str] = dict(rules or {})
+        # Learning Loop (L2): o que deu certo vira PROPOSTA de procedimento.
+        # None = a plataforma executa sem aprender (comportamento anterior).
+        self._proposer = proposer
 
     def add_rule(self, intent: str, capability_id: str) -> None:
         self._rules[intent] = capability_id
@@ -331,7 +336,17 @@ class Orchestrator:
         if not plano.steps:
             raise OrchestrationError(f"o planner não soube decompor o objetivo: {goal!r}")
         _log.info("orchestration_planned", goal=goal, steps=len(plano.steps), layer="planner")
-        return await self._plan_runner.run(plano, context=ctx)
+        resultado = await self._plan_runner.run(plano, context=ctx)
+
+        # Learning Loop (L2): o caminho que funcionou vira PROPOSTA de
+        # procedimento — nunca escrita direta (ADR-064). Aprender é efeito
+        # colateral: se falhar, o trabalho já feito não pode ser perdido.
+        if self._proposer is not None:
+            try:
+                await self._proposer.propose(goal, resultado, ctx=ctx)
+            except Exception as exc:
+                _log.warning("playbook_proposal_failed", goal=goal, error=repr(exc)[:200])
+        return resultado
 
 
 # canário anti-truncamento

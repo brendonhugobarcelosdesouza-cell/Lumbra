@@ -30,6 +30,7 @@ from lumbra.kernel.context_engine import ContextEngine
 from lumbra.kernel.decisions import DecisionEngine
 from lumbra.kernel.events import KernelStarted, KernelStopped, ModuleStarted, register_kernel_events
 from lumbra.kernel.explain import ExplainEngine
+from lumbra.kernel.learning import PlaybookProposer
 from lumbra.kernel.orchestrator import Orchestrator
 from lumbra.kernel.planning import KeywordPlanner, PlanRunner
 from lumbra.kernel.skill_registry import SkillRegistry
@@ -101,6 +102,7 @@ class LumbraKernel:
         permissions: PermissionPort,
         planner: PlannerPort | None = None,
         approval: ApprovalPolicyPort | None = None,
+        proposer: PlaybookProposer | None = None,
         producer: str = "lumbra-kernel@0.1.0",
     ) -> None:
         self.events = events
@@ -136,6 +138,7 @@ class LumbraKernel:
             planner=self.planner,
             plan_runner=self.plan_runner,
             permissions=permissions,  # habilita o sandbox por execução (A7.6)
+            proposer=proposer,  # Learning Loop (L2); None = não aprende
         )
         self._producer = producer
         self._modules: dict[str, LumbraModule] = {}
