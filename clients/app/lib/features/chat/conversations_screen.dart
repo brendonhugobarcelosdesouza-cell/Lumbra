@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumbra_api/api.dart';
 
 import '../../core/session.dart';
+import '../approvals/approvals_providers.dart';
+import '../approvals/approvals_screen.dart';
 import '../devices/devices_screen.dart';
 import 'chat_providers.dart';
 import 'chat_screen.dart';
@@ -19,6 +21,7 @@ class ConversationsScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Lumbra'),
         actions: [
+          const _BotaoAprovacoes(),
           IconButton(
             tooltip: 'Dispositivos',
             icon: const Icon(Icons.devices),
@@ -82,6 +85,33 @@ class ConversationsScreen extends ConsumerWidget {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => ChatScreen(conversationId: id, title: titulo),
+      ),
+    );
+  }
+}
+
+/// Entrada para a caixa de aprovações, com contador do que aguarda decisão.
+///
+/// O contador existe porque um pedido que ninguém vê é igual a um pedido
+/// negado: a plataforma pode aprender sozinha justamente porque há onde
+/// perguntar, e o usuário precisa perceber que foi perguntado. Sem pendências
+/// (o caso comum), some — não vira ruído.
+class _BotaoAprovacoes extends ConsumerWidget {
+  const _BotaoAprovacoes();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pendentes = ref.watch(pendingApprovalsProvider);
+    final quantos = pendentes.valueOrNull?.length ?? 0;
+    // erro ou carga do Nó não pode esconder o acesso: o botão fica, sem selo
+    final icone = quantos == 0
+        ? const Icon(Icons.inbox_outlined)
+        : Badge.count(count: quantos, child: const Icon(Icons.inbox));
+    return IconButton(
+      tooltip: 'Aprovações',
+      icon: icone,
+      onPressed: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const ApprovalsScreen()),
       ),
     );
   }

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumbra_api/api.dart';
 import 'package:lumbra_app/core/session.dart';
+import 'package:lumbra_app/features/approvals/approvals_providers.dart';
 import 'package:lumbra_app/features/chat/chat_providers.dart';
 import 'package:lumbra_app/main.dart';
 
@@ -35,6 +36,9 @@ void main() {
           // sem rede: a home recebe uma lista vazia de conversas
           conversationsProvider.overrideWith(
             (ref) async => const <ConversationOut>[],
+          ),
+          pendingApprovalsProvider.overrideWith(
+            (ref) async => const <ApprovalOut>[],
           ),
         ],
         child: const LumbraApp(),
