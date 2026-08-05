@@ -6,6 +6,7 @@ import '../../core/session.dart';
 import '../approvals/approvals_providers.dart';
 import '../approvals/approvals_screen.dart';
 import '../devices/devices_screen.dart';
+import '../playbooks/playbooks_screen.dart';
 import 'chat_providers.dart';
 import 'chat_screen.dart';
 
@@ -22,6 +23,13 @@ class ConversationsScreen extends ConsumerWidget {
         title: const Text('Lumbra'),
         actions: [
           const _BotaoAprovacoes(),
+          IconButton(
+            tooltip: 'Procedimentos',
+            icon: const Icon(Icons.menu_book_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const PlaybooksScreen()),
+            ),
+          ),
           IconButton(
             tooltip: 'Dispositivos',
             icon: const Icon(Icons.devices),
