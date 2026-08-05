@@ -19,6 +19,7 @@ from lumbra.adapters.ai.fastembed_local import FastEmbedProvider
 from lumbra.adapters.ai.gateway import AIGateway
 from lumbra.adapters.ai.ollama import OllamaChatProvider
 from lumbra.adapters.approvals.in_memory import InMemoryApprovalStore
+from lumbra.adapters.approvals.postgres import PostgresApprovalStore
 from lumbra.adapters.attachments.filesystem import FilesystemBlobStore
 from lumbra.adapters.attachments.in_memory import InMemoryAttachmentStore
 from lumbra.adapters.attachments.postgres import PostgresAttachmentStore
@@ -90,6 +91,7 @@ from lumbra.pipeline.stages.index import IndexStage
 from lumbra.pipeline.stages.kg import KnowledgeGraphStage
 from lumbra.pipeline.stages.metadata import MetadataStage
 from lumbra.pipeline.stages.ocr import OCRStage
+from lumbra.ports.approval import ApprovalStorePort
 from lumbra.ports.attachments import AttachmentStorePort
 from lumbra.ports.capabilities import CapabilitySpec
 from lumbra.ports.conversations import ConversationStorePort
@@ -130,7 +132,11 @@ def create_default_app() -> FastAPI:
 
     # Human-in-the-Loop (ADR-024): o que passa do teto vira pedido pendente
     # em vez de erro sem saída. Com o teto padrão (critical) nada muda.
-    approval_store = InMemoryApprovalStore()
+    # Persistente (L2.2): decisao pendente e estado do usuario — o dogfooding
+    # mostrou o No reiniciando entre listar e decidir, e a fila evaporando.
+    approval_store: ApprovalStorePort = (
+        PostgresApprovalStore(db) if db is not None else InMemoryApprovalStore()
+    )
     # memória PROCEDURAL (L1): o quarto tipo de conhecimento — como se faz.
     # Persistente em postgres (L1.6): procedimento que evapora ao reiniciar o
     # Nó não é conhecimento, é anotação.

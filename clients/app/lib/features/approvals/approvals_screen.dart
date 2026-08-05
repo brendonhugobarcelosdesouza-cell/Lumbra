@@ -113,6 +113,19 @@ class _CartaoPedido extends ConsumerWidget {
     return titulo is String && titulo.isNotEmpty ? titulo : pedido.action;
   }
 
+  /// Traduz a falha para o que de fato aconteceu com o PEDIDO.
+  ///
+  /// O 404 nao e um erro tecnico a ser despejado na tela: significa que o
+  /// pedido deixou de existir — tipicamente porque o No reiniciou antes de
+  /// voce decidir. Dizer isso e a diferenca entre uma tela que explica e uma
+  /// que assusta.
+  static String _recado(ApiException e) => switch (e.code) {
+    404 => 'Este pedido expirou (o No foi reiniciado). Peca a acao de novo.',
+    409 => 'Este pedido ja tinha sido decidido.',
+    403 => 'Voce nao tem permissao para esta acao.',
+    _ => 'Nao foi possivel decidir: ${e.message ?? e.code}',
+  };
+
   static List<String> _passos(ApprovalOut pedido) {
     final passos = pedido.payload['steps'];
     if (passos is! List) return const [];
@@ -137,6 +150,12 @@ class _CartaoPedido extends ConsumerWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(aprovar ? 'Aprovado.' : 'Descartado.')),
       );
+    } on ApiException catch (e) {
+      // a lista some junto: insistir num pedido que nao existe mais so
+      // repetiria o erro
+      ref.invalidate(pendingApprovalsProvider);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_recado(e))));
     } catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(

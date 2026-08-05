@@ -252,6 +252,30 @@ class PlaybookModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class ApprovalModel(Base):
+    """Pedido de confirmação humana (L2.2, ADR-063 revisado).
+
+    Nasceu in-memory por argumento de que confirmação e interação viva. O
+    dogfooding derrubou isso no primeiro uso: o Nó reiniciou entre listar e
+    decidir, a fila evaporou e a decisão virou 404 sem explicação.
+    """
+
+    __tablename__ = "approvals"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    action: Mapped[str] = mapped_column(Text, nullable=False)
+    subject: Mapped[str] = mapped_column(Text, nullable=False)
+    risk_level: Mapped[str] = mapped_column(Text, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    # o pedido original: aprovar e REEXECUTAR, então o payload é essencial
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    # pending | approved | rejected
+    state: Mapped[str] = mapped_column(Text, nullable=False, server_default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class ConversationModel(Base):
     __tablename__ = "conversations"
 
