@@ -18,7 +18,8 @@ from __future__ import annotations
 from uuid import UUID
 
 from lumbra.kernel.approval import AutoApprovePolicy
-from lumbra.kernel.skill_registry import SkillRegistry
+from lumbra.kernel.events import ApprovalGranted, ApprovalRejected
+from lumbra.kernel.skill_registry import PublishFn, SkillRegistry
 from lumbra.ports.approval import (
     ApprovalState,
     ApprovalStorePort,
@@ -31,8 +32,15 @@ _log = get_logger("lumbra.kernel.approval_service")
 
 
 class ApprovalService:
-    def __init__(self, skills: SkillRegistry, store: ApprovalStorePort) -> None:
+    def __init__(
+        self,
+        skills: SkillRegistry,
+        store: ApprovalStorePort,
+        *,
+        publish: PublishFn | None = None,
+    ) -> None:
         self._store = store
+        self._publish = publish
         # vista com o gate aberto: só é usada DEPOIS do sim humano, e só
         # para o pedido exato que ele confirmou
         self._aprovado = skills.with_approval(AutoApprovePolicy(auto_ate=RiskLevel.CRITICAL))
@@ -51,6 +59,7 @@ class ApprovalService:
         repetir automaticamente seria decidir pelo usuário."""
         ticket = await self._store.resolve(ticket_id, user_id=user_id, state=ApprovalState.APPROVED)
         _log.info("approval_granted", ticket=str(ticket.id), action=ticket.action)
+        await self._emit(ApprovalGranted, ticket)
         return await self._aprovado.execute(
             ticket.action,
             ticket.payload,
@@ -60,7 +69,23 @@ class ApprovalService:
     async def reject(self, ticket_id: UUID, *, user_id: UUID) -> ApprovalTicket:
         ticket = await self._store.resolve(ticket_id, user_id=user_id, state=ApprovalState.REJECTED)
         _log.info("approval_rejected", ticket=str(ticket.id), action=ticket.action)
+        await self._emit(ApprovalRejected, ticket)
         return ticket
+
+    async def _emit(
+        self, evento: type[ApprovalGranted] | type[ApprovalRejected], ticket: ApprovalTicket
+    ) -> None:
+        """A decisão humana entra na trilha de auditoria.
+
+        O 'não' vale tanto quanto o 'sim': é o registro de que a plataforma
+        pediu e foi recusada — o rastro que denuncia um agente insistindo numa
+        ação que o usuário nunca quis."""
+        if self._publish is None:
+            return
+        await self._publish(
+            evento(ticket=str(ticket.id), action=ticket.action, subject=ticket.subject),
+            user_id=ticket.user_id,
+        )
 
 
 # canário anti-truncamento

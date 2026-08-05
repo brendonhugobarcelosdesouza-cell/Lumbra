@@ -18,7 +18,9 @@ SkillRegistry: escrever direto seria justamente o caminho que o teto
 
 from __future__ import annotations
 
+from lumbra.kernel.events import ApprovalRequested
 from lumbra.kernel.planning import PlanResult
+from lumbra.kernel.skill_registry import PublishFn
 from lumbra.ports.approval import ApprovalStorePort, ApprovalTicket
 from lumbra.ports.playbooks import PlaybookOrigin, PlaybookStorePort
 from lumbra.ports.skills import RiskLevel, SkillContext
@@ -39,9 +41,11 @@ class PlaybookProposer:
         approvals: ApprovalStorePort,
         *,
         min_passos: int = 2,
+        publish: PublishFn | None = None,
     ) -> None:
         self._playbooks = playbooks
         self._approvals = approvals
+        self._publish = publish
         # 1 passo não é procedimento, é uma chamada: não vale a pena guardar
         self._min_passos = min_passos
 
@@ -92,6 +96,18 @@ class PlaybookProposer:
             steps=len(passos),
             subject=ctx.subject,
         )
+        # mesmo evento de um pedido barrado pelo gate: para a auditoria, o que
+        # importa é que a plataforma quis escrever e foi perguntar
+        if self._publish is not None:
+            await self._publish(
+                ApprovalRequested(
+                    ticket=str(ticket.id),
+                    action=_ACAO,
+                    subject=ctx.subject,
+                    risk_level=RiskLevel.MEDIUM.value,
+                ),
+                user_id=ctx.user_id,
+            )
         return ticket
 
     async def _ja_conhecido(self, titulo: str, ctx: SkillContext) -> bool:

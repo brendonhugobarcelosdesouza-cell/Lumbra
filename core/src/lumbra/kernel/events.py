@@ -45,6 +45,32 @@ class SkillFailed(EventPayload):
     error: str
 
 
+class ApprovalRequested(EventPayload):
+    """Uma ação de risco ficou esperando o humano (ADR-063).
+
+    Está na trilha de auditoria porque o que a plataforma QUIS fazer importa
+    tanto quanto o que fez: é assim que se descobre um agente insistindo numa
+    ação que o usuário recusa sempre.
+    """
+
+    ticket: str
+    action: str
+    subject: str
+    risk_level: str
+
+
+class ApprovalGranted(EventPayload):
+    ticket: str
+    action: str
+    subject: str
+
+
+class ApprovalRejected(EventPayload):
+    ticket: str
+    action: str
+    subject: str
+
+
 _KERNEL_EVENTS: tuple[tuple[str, type[EventPayload]], ...] = (
     ("kernel.started", KernelStarted),
     ("kernel.stopped", KernelStopped),
@@ -52,6 +78,9 @@ _KERNEL_EVENTS: tuple[tuple[str, type[EventPayload]], ...] = (
     ("kernel.skill_registered", SkillRegistered),
     ("skill.executed", SkillExecuted),
     ("skill.failed", SkillFailed),
+    ("approval.requested", ApprovalRequested),
+    ("approval.granted", ApprovalGranted),
+    ("approval.rejected", ApprovalRejected),
 )
 
 

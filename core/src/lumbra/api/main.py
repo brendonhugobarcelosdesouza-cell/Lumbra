@@ -137,6 +137,14 @@ def create_default_app() -> FastAPI:
     playbook_store: PlaybookStorePort = (
         PostgresPlaybookStore(db) if db is not None else InMemoryPlaybookStore()
     )
+
+    # publica pelo kernel, que ainda não existe nesta linha: a closure resolve
+    # o nome só na hora da chamada, e aí o kernel já está montado. É o que
+    # permite política e proposer entrarem na trilha de auditoria sem inverter
+    # a ordem de construção.
+    async def _publicar(payload: Any, **kwargs: Any) -> None:
+        await kernel.publish(payload, **kwargs)
+
     kernel = LumbraKernel(
         events=events,
         bus=bus,
@@ -144,11 +152,13 @@ def create_default_app() -> FastAPI:
         # dev: permite tudo EXPLICITAMENTE; produção usará consents (doc 18)
         permissions=StaticPermissionAdapter(default_allow=not settings.is_production),
         approval=RecordingApprovalPolicy(
-            approval_store, auto_ate=RiskLevel(settings.security.auto_approve_ate)
+            approval_store,
+            auto_ate=RiskLevel(settings.security.auto_approve_ate),
+            publish=_publicar,
         ),
         # Learning Loop (L2): objetivo multi-passo cumprido vira PROPOSTA de
         # procedimento na fila de aprovações — nunca escrita direta (ADR-064)
-        proposer=PlaybookProposer(playbook_store, approval_store),
+        proposer=PlaybookProposer(playbook_store, approval_store, publish=_publicar),
     )
     kernel.register_module(KernelCoreModule())
 
@@ -324,7 +334,10 @@ def create_default_app() -> FastAPI:
         build_devices_router(kernel, device_store, auth.tokens),
         build_agents_router(kernel, _mrs(auth.tokens)),
         build_playbooks_router(kernel, playbook_store, _mrs(auth.tokens)),
-        build_approvals_router(ApprovalService(kernel.skills, approval_store), _mrs(auth.tokens)),
+        build_approvals_router(
+            ApprovalService(kernel.skills, approval_store, publish=kernel.publish),
+            _mrs(auth.tokens),
+        ),
     ]
     return create_app(
         settings, kernel=kernel, auth=auth, dev_router=dev_router, extra_routers=extra_routers

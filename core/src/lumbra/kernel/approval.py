@@ -12,6 +12,8 @@ confirmação. Quando a interface chegar, baixa-se o teto (ex.: ``LOW``) e
 
 from __future__ import annotations
 
+from lumbra.kernel.events import ApprovalRequested
+from lumbra.kernel.skill_registry import PublishFn
 from lumbra.ports.approval import (
     ApprovalDecision,
     ApprovalOutcome,
@@ -64,10 +66,17 @@ class RecordingApprovalPolicy(ApprovalPolicyPort):
     """
 
     def __init__(
-        self, store: ApprovalStorePort, *, auto_ate: RiskLevel = RiskLevel.CRITICAL
+        self,
+        store: ApprovalStorePort,
+        *,
+        auto_ate: RiskLevel = RiskLevel.CRITICAL,
+        publish: PublishFn | None = None,
     ) -> None:
         self._store = store
         self._base = AutoApprovePolicy(auto_ate=auto_ate)
+        # o que a plataforma QUIS fazer entra na trilha de auditoria junto
+        # com o que ela fez; None = sem bus (testes e uso isolado)
+        self._publish = publish
 
     async def decide(self, request: ApprovalRequest) -> ApprovalOutcome:
         outcome = await self._base.decide(request)
@@ -93,6 +102,16 @@ class RecordingApprovalPolicy(ApprovalPolicyPort):
             subject=request.subject,
             risk=request.risk_level.value,
         )
+        if self._publish is not None:
+            await self._publish(
+                ApprovalRequested(
+                    ticket=str(ticket.id),
+                    action=request.action,
+                    subject=request.subject,
+                    risk_level=request.risk_level.value,
+                ),
+                user_id=request.user_id,
+            )
         # o id vai na razão: é o que o cliente mostra ao usuário para decidir
         return ApprovalOutcome(
             decision=ApprovalDecision.NEEDS_CONFIRMATION,
