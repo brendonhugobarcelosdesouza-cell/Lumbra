@@ -77,7 +77,8 @@ class _CartaoPedido extends ConsumerWidget {
               pedido.action,
               style: Theme.of(context).textTheme.bodySmall,
             ),
-            if (pedido.reason.isNotEmpty) ...[
+            // a razao so aparece de novo se nao virou o titulo
+            if (pedido.reason.isNotEmpty && _titulo(pedido) != pedido.reason) ...[
               const SizedBox(height: 8),
               Text(pedido.reason),
             ],
@@ -108,9 +109,16 @@ class _CartaoPedido extends ConsumerWidget {
     );
   }
 
+  /// O que a pessoa le primeiro — e o que ela vai usar para decidir.
+  ///
+  /// Prefere o titulo do proprio pedido; senao, a frase que a skill escreveu
+  /// sobre si ("esquecer o procedimento X"). O nome tecnico da acao so vira
+  /// titulo em ultimo caso: "playbook.forget" nao ajuda ninguem a julgar.
   static String _titulo(ApprovalOut pedido) {
     final titulo = pedido.payload['title'];
-    return titulo is String && titulo.isNotEmpty ? titulo : pedido.action;
+    if (titulo is String && titulo.isNotEmpty) return titulo;
+    if (pedido.reason.isNotEmpty) return pedido.reason;
+    return pedido.action;
   }
 
   /// Traduz a falha para o que de fato aconteceu com o PEDIDO.

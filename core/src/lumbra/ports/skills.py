@@ -128,6 +128,18 @@ class SkillContext:
 
 SkillHandler = Callable[[SkillInput, SkillContext], Awaitable[SkillOutput]]
 
+# Descreve o PEDIDO em linguagem de gente, para a confirmação humana.
+#
+# Existe porque uma tela de aprovação que mostra `playbook.forget` e um id
+# opaco não deixa ninguém julgar nada — ela ensina a clicar em "Aprovar" sem
+# ler, que é o hábito exato que o gate existe para evitar. Quem sabe traduzir
+# o payload é a skill, não o cliente: assim toda ação de risco futura ganha
+# uma frase honesta sem que app, CLI e plugins precisem conhecer cada uma.
+#
+# É async porque descrever costuma exigir uma consulta ("esquecer QUAL
+# procedimento?"). Falhar aqui nunca impede a execução.
+SkillDescriber = Callable[[SkillInput, SkillContext], Awaitable[str]]
+
 
 @dataclass(frozen=True, slots=True)
 class Skill:
@@ -137,3 +149,4 @@ class Skill:
     input_model: type[SkillInput]
     output_model: type[SkillOutput]
     handler: SkillHandler
+    describe: SkillDescriber | None = None

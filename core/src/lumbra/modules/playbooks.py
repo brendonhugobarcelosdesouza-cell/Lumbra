@@ -94,6 +94,7 @@ class PlaybookModule(LumbraModule):
                 input_model=WriteInput,
                 output_model=WriteOutput,
                 handler=self._write,
+                describe=self._descrever_write,
             )
         )
         await kernel.skills.register(
@@ -124,8 +125,31 @@ class PlaybookModule(LumbraModule):
                 input_model=ForgetInput,
                 output_model=ForgetOutput,
                 handler=self._forget,
+                describe=self._descrever_forget,
             )
         )
+
+    # ------------------------------------------------------- descrições
+    # O que o usuário lê na tela de aprovação. Sem isto ele veria
+    # "playbook.forget" e um id opaco — e aprovaria uma exclusão sem saber
+    # o que está apagando.
+
+    async def _descrever_write(self, payload: SkillInput, _ctx: SkillContext) -> str:
+        assert isinstance(payload, WriteInput)  # noqa: S101
+        origem = "a Lumbra quer guardar" if payload.origin is PlaybookOrigin.AGENT else "guardar"
+        return f"{origem} o procedimento “{payload.title}” ({len(payload.steps)} passos)"
+
+    async def _descrever_forget(self, payload: SkillInput, ctx: SkillContext) -> str:
+        assert isinstance(payload, ForgetInput)  # noqa: S101
+        alvo = payload.playbook_id
+        if ctx.user_id is not None:
+            # busca o título: apagar sem saber O QUE se apaga não é decisão
+            for p in await self._store.list_by_user(ctx.user_id, limit=200):
+                if str(p.id) == alvo:
+                    return f"esquecer o procedimento “{p.title}”"
+        return f"esquecer o procedimento {alvo}"
+
+    # ------------------------------------------------------- handlers
 
     async def _write(self, payload: SkillInput, ctx: SkillContext) -> WriteOutput:
         assert isinstance(payload, WriteInput)  # noqa: S101

@@ -55,8 +55,31 @@ void main() {
     expect(find.widgetWithText(TextButton, 'Descartar'), findsOneWidget);
   });
 
-  testWidgets('pedido sem título cai no nome da ação', (tester) async {
+  testWidgets('sem título, o titular é a frase que a skill escreveu', (
+    tester,
+  ) async {
+    // o caso que motivou o describe: "playbook.forget" e um id nao deixam
+    // ninguem julgar uma exclusao
     final semTitulo = ApprovalOut(
+      id: 'x',
+      action: 'playbook.forget',
+      subject: 'user:1',
+      riskLevel: 'medium',
+      reason: 'esquecer o procedimento “Reindexar após mudar a extração”',
+      createdAt: '2026-08-01T00:00:00Z',
+      payload: const {},
+    );
+    await _montar(tester, [semTitulo]);
+
+    expect(
+      find.text('esquecer o procedimento “Reindexar após mudar a extração”'),
+      findsOneWidget, // titular, sem repetir logo abaixo
+    );
+    expect(find.text('playbook.forget'), findsOneWidget); // só como ação
+  });
+
+  testWidgets('sem título e sem frase, resta o nome da ação', (tester) async {
+    final cru = ApprovalOut(
       id: 'x',
       action: 'memory.forget',
       subject: 'user:1',
@@ -65,8 +88,7 @@ void main() {
       createdAt: '2026-08-01T00:00:00Z',
       payload: const {},
     );
-    await _montar(tester, [semTitulo]);
-    // aparece duas vezes: como título e como ação técnica
+    await _montar(tester, [cru]);
     expect(find.text('memory.forget'), findsNWidgets(2));
   });
 }

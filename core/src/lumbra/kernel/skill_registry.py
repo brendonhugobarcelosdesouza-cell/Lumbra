@@ -28,6 +28,7 @@ from lumbra.ports.skills import (
     Skill,
     SkillApprovalRequiredError,
     SkillContext,
+    SkillInput,
     SkillManifest,
     SkillNotFoundError,
     SkillOutput,
@@ -159,6 +160,15 @@ class SkillRegistry:
             if not allowed:
                 raise SkillPermissionDeniedError(name, context.subject, scope)
 
+        # Validação ANTES do gate: pedido malformado não pode virar decisão
+        # humana pendente — perguntar sobre algo que nem seria executável é
+        # gastar a atenção do usuário à toa.
+        try:
+            validated = skill.input_model.model_validate(dict(payload))
+        except ValidationError:
+            _log.warning("skill_input_invalid", skill=name, subject=context.subject)
+            raise
+
         # Human-in-the-Loop (ADR-024): ação de risco >= MEDIUM passa pela
         # política de aprovação ANTES de executar. O sujeito TEM o escopo; o
         # que se decide aqui é se a ação de impacto pode ser automática.
@@ -168,7 +178,7 @@ class SkillRegistry:
                     action=name,
                     subject=context.subject,
                     risk_level=manifest.risk_level,
-                    reason=f"execução solicitada por {context.subject}",
+                    reason=await self._descrever(skill, validated, context),
                     # dono e pedido completo: é o que permite reexecutar
                     # exatamente isto quando o humano confirmar
                     user_id=context.user_id,
@@ -184,12 +194,6 @@ class SkillRegistry:
             )
             if not outcome.allowed:
                 raise SkillApprovalRequiredError(name, context.subject, outcome.decision.value)
-
-        try:
-            validated = skill.input_model.model_validate(dict(payload))
-        except ValidationError:
-            _log.warning("skill_input_invalid", skill=name, subject=context.subject)
-            raise
 
         started = time.perf_counter()
         try:
@@ -243,6 +247,22 @@ class SkillRegistry:
                 )
             )
         return result
+
+    async def _descrever(self, skill: Skill, payload: SkillInput, ctx: SkillContext) -> str:
+        """A frase que o usuário vai ler ao decidir.
+
+        Se a skill não sabe se descrever, cai num texto genérico — feio, mas
+        honesto. Se a descrição FALHA (uma consulta que não respondeu, por
+        exemplo), a ação não pode ser barrada por causa disso: a decisão
+        continua sendo pedida, só que sem o enfeite."""
+        generico = f"execução de {skill.manifest.name} solicitada por {ctx.subject}"
+        if skill.describe is None:
+            return generico
+        try:
+            return await skill.describe(payload, ctx) or generico
+        except Exception as exc:
+            _log.warning("skill_describe_failed", skill=skill.manifest.name, error=repr(exc)[:200])
+            return generico
 
     async def _emit(self, payload: Any, context: SkillContext) -> None:
         if self._publish is not None:
