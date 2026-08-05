@@ -58,7 +58,17 @@ class _Procedimento extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Theme.of(context).colorScheme.outline),
+      ),
+      clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
+        // sem as bordas próprias do ExpansionTile: com o contorno do cartão,
+        // elas viravam linha dupla
+        shape: const Border(),
+        collapsedShape: const Border(),
         title: Text(playbook.title),
         subtitle: Text(playbook.whenToUse),
         children: [

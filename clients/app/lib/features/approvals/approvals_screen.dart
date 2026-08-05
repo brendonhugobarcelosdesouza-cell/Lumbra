@@ -53,6 +53,13 @@ class _CartaoPedido extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
+      // plano, com contorno em vez de sombra: a sombra sugere hierarquia que
+      // não existe aqui — todo pedido pesa igual
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Theme.of(context).colorScheme.outline),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(

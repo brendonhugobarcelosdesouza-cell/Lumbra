@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/session.dart';
+import 'core/theme.dart';
 import 'features/auth/login_screen.dart';
 import 'features/chat/conversations_screen.dart';
 
@@ -19,10 +20,11 @@ class LumbraApp extends StatelessWidget {
     return MaterialApp(
       title: 'Lumbra',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorSchemeSeed: const Color(0xFF6750A4),
-        useMaterial3: true,
-      ),
+      // claro e escuro de verdade, seguindo a preferência do sistema: quem
+      // deixa o computador no escuro não quer uma janela branca na cara
+      theme: LumbraTheme.claro,
+      darkTheme: LumbraTheme.escuro,
+      themeMode: ThemeMode.system,
       home: const _Raiz(),
     );
   }
