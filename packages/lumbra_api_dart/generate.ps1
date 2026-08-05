@@ -16,13 +16,22 @@ $ErrorActionPreference = "Stop"
 
 $Aqui = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Raiz = (Resolve-Path (Join-Path $Aqui "..\..")).Path
-$Contrato = Join-Path $Raiz "core\contracts\platform-api-v1.json"
-# gera num subdiretorio dedicado: o pacote Dart inteiro vive em generated\,
+
+# CAMINHOS RELATIVOS, COM BARRA NORMAL, RODANDO DA RAIZ: o gerador trata o
+# --input-spec como URI, e um caminho absoluto do Windows quebra o parser
+# Java ("Illegal character in opaque part at index 2" -- a barra invertida
+# logo depois de "C:"). Relativo nao tem letra de unidade nem barra invertida,
+# entao nao vira URI ambigua.
+$Contrato = "core/contracts/platform-api-v1.json"
+# gera num subdiretorio dedicado: o pacote Dart inteiro vive em generated/,
 # sem nunca tocar os arquivos autorais (generate.sh/.ps1, README, .gitignore)
-$Saida = Join-Path $Aqui "generated"
+$Saida = "packages/lumbra_api_dart/generated"
+
+Push-Location $Raiz
+try {
 
 if (-not (Test-Path $Contrato)) {
-    Write-Error "contrato nao encontrado: $Contrato (gere com: cd core; python -m lumbra.api.contract)"
+    Write-Error "contrato nao encontrado: $Raiz\$Contrato (gere com: cd core; python -m lumbra.api.contract)"
 }
 
 # versao do GERADOR fixada (o wrapper npm e 2.x; o gerador Java e 7.x):
@@ -40,4 +49,7 @@ npx --yes "@openapitools/openapi-generator-cli@2.24.0" generate `
 
 if ($LASTEXITCODE -ne 0) { Write-Error "o gerador falhou (codigo $LASTEXITCODE)" }
 
-Write-Host "OK: cliente Dart em $Saida (lib\). Regenerado do contrato, nao editar a mao." -ForegroundColor Green
+Write-Host "OK: cliente Dart em $Raiz\$Saida (lib). Regenerado do contrato, nao editar a mao." -ForegroundColor Green
+
+}
+finally { Pop-Location }
