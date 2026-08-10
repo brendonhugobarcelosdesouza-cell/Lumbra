@@ -1,6 +1,9 @@
+// AppExitResponse é do dart:ui — não de material nem de services. O
+// AppLifecycleListener vem de widgets (via material), mas o enum que ele
+// devolve mora uma camada abaixo.
+import 'dart:ui' show AppExitResponse;
+
 import 'package:flutter/material.dart';
-// AppExitResponse mora em services, não em material
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/node_process.dart';
