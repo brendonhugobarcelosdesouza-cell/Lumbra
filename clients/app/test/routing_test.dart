@@ -1,9 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumbra_api/api.dart';
+import 'package:lumbra_app/core/api.dart';
 import 'package:lumbra_app/core/session.dart';
 import 'package:lumbra_app/features/approvals/approvals_providers.dart';
 import 'package:lumbra_app/features/chat/chat_providers.dart';
+import 'package:lumbra_app/features/playbooks/playbooks_providers.dart';
 import 'package:lumbra_app/main.dart';
 
 import 'session_test.dart';
@@ -37,9 +39,13 @@ void main() {
           conversationsProvider.overrideWith(
             (ref) async => const <ConversationOut>[],
           ),
+          // a casca monta as quatro seções de uma vez (IndexedStack), então
+          // todas precisam de dado falso — nenhuma pode ir à rede no teste
           pendingApprovalsProvider.overrideWith(
             (ref) async => const <ApprovalOut>[],
           ),
+          playbooksProvider.overrideWith((ref) async => const <PlaybookOut>[]),
+          devicesListProvider.overrideWith((ref) async => const <DeviceResponse>[]),
         ],
         child: const LumbraApp(),
       ),

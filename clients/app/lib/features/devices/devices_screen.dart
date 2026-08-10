@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api.dart';
-import '../../core/session.dart';
 
 /// Primeira tela autenticada: lista os dispositivos do usuário (exige Bearer
 /// + escopo devices:read). Prova que a sessão flui ponta a ponta e liga na
@@ -14,17 +13,9 @@ class DevicesScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final dispositivos = ref.watch(devicesListProvider);
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Lumbra'),
-        actions: [
-          IconButton(
-            tooltip: 'Sair',
-            icon: const Icon(Icons.logout),
-            onPressed: () =>
-                ref.read(sessionControllerProvider.notifier).logout(),
-          ),
-        ],
-      ),
+      // sair virou item fixo da barra lateral (HomeShell): estava repetido
+      // em cada tela, e é uma ação de aplicativo, não de seção
+      appBar: AppBar(title: const Text('Dispositivos')),
       body: dispositivos.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (erro, _) => Center(

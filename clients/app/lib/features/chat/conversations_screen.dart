@@ -2,11 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumbra_api/api.dart';
 
-import '../../core/session.dart';
-import '../approvals/approvals_providers.dart';
-import '../approvals/approvals_screen.dart';
-import '../devices/devices_screen.dart';
-import '../playbooks/playbooks_screen.dart';
 import 'chat_providers.dart';
 import 'chat_screen.dart';
 
@@ -19,32 +14,9 @@ class ConversationsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final conversas = ref.watch(conversationsProvider);
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Lumbra'),
-        actions: [
-          const _BotaoAprovacoes(),
-          IconButton(
-            tooltip: 'Procedimentos',
-            icon: const Icon(Icons.menu_book_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const PlaybooksScreen()),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Dispositivos',
-            icon: const Icon(Icons.devices),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const DevicesScreen()),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Sair',
-            icon: const Icon(Icons.logout),
-            onPressed: () =>
-                ref.read(sessionControllerProvider.notifier).logout(),
-          ),
-        ],
-      ),
+      // sem ícones de navegação aqui: as seções viraram lugares na barra
+      // lateral (HomeShell), não atalhos escondidos no topo
+      appBar: AppBar(title: const Text('Conversas')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _novaConversa(context, ref),
         icon: const Icon(Icons.add),
@@ -60,16 +32,7 @@ class ConversationsScreen extends ConsumerWidget {
         ),
         data: (lista) => lista.isEmpty
             ? const Center(child: Text('Nenhuma conversa ainda.'))
-            : ListView(
-                children: [
-                  for (final c in lista)
-                    ListTile(
-                      leading: const Icon(Icons.chat_bubble_outline),
-                      title: Text(c.title ?? 'Conversa'),
-                      onTap: () => _abrir(context, c.id, c.title),
-                    ),
-                ],
-              ),
+            : _ListaAgrupada(conversas: lista, aoAbrir: _abrir),
       ),
     );
   }
@@ -98,29 +61,91 @@ class ConversationsScreen extends ConsumerWidget {
   }
 }
 
-/// Entrada para a caixa de aprovações, com contador do que aguarda decisão.
+/// A lista com cabeçalhos de data e largura de leitura.
 ///
-/// O contador existe porque um pedido que ninguém vê é igual a um pedido
-/// negado: a plataforma pode aprender sozinha justamente porque há onde
-/// perguntar, e o usuário precisa perceber que foi perguntado. Sem pendências
-/// (o caso comum), some — não vira ruído.
-class _BotaoAprovacoes extends ConsumerWidget {
-  const _BotaoAprovacoes();
+/// A largura importa: numa tela de 1500px, texto correndo de ponta a ponta
+/// obriga o olho a varrer a linha inteira. Uma coluna de ~720px é o que se
+/// lê sem cansar — o resto da tela é respiro, não desperdício.
+class _ListaAgrupada extends StatelessWidget {
+  const _ListaAgrupada({required this.conversas, required this.aoAbrir});
+
+  final List<ConversationOut> conversas;
+  final void Function(BuildContext, String, String?) aoAbrir;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final pendentes = ref.watch(pendingApprovalsProvider);
-    final quantos = pendentes.valueOrNull?.length ?? 0;
-    // erro ou carga do Nó não pode esconder o acesso: o botão fica, sem selo
-    final icone = quantos == 0
-        ? const Icon(Icons.inbox_outlined)
-        : Badge.count(count: quantos, child: const Icon(Icons.inbox));
-    return IconButton(
-      tooltip: 'Aprovações',
-      icon: icone,
-      onPressed: () => Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const ApprovalsScreen()),
+  Widget build(BuildContext context) {
+    final grupos = agruparPorData(conversas);
+    final estiloGrupo = Theme.of(context).textTheme.labelMedium?.copyWith(
+      color: Theme.of(context).colorScheme.primary,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.6,
+    );
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+          children: [
+            for (final rotulo in ordemDosGrupos)
+              if (grupos[rotulo] != null) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 20, 12, 6),
+                  child: Text(rotulo.toUpperCase(), style: estiloGrupo),
+                ),
+                for (final c in grupos[rotulo]!)
+                  ListTile(
+                    leading: const Icon(Icons.chat_bubble_outline, size: 20),
+                    title: Text(c.title ?? 'Conversa'),
+                    onTap: () => aoAbrir(context, c.id, c.title),
+                  ),
+              ],
+          ],
+        ),
       ),
     );
   }
 }
+
+/// Agrupa as conversas por quando aconteceram.
+///
+/// Uma lista corrida de "Conversa, Conversa, Conversa" não diz nada: o que
+/// localiza a pessoa é o TEMPO ("aquilo foi ontem"), não a posição. Os grupos
+/// são os que a memória usa — hoje, ontem, a semana, o resto.
+Map<String, List<ConversationOut>> agruparPorData(
+  List<ConversationOut> conversas, {
+  DateTime? agora,
+}) {
+  final hoje = DateTime(
+    (agora ?? DateTime.now()).year,
+    (agora ?? DateTime.now()).month,
+    (agora ?? DateTime.now()).day,
+  );
+  final grupos = <String, List<ConversationOut>>{};
+  for (final c in conversas) {
+    final quando = DateTime.tryParse(c.lastMessageAt ?? c.createdAt)?.toLocal();
+    final rotulo = quando == null
+        ? 'Sem data'
+        : _rotuloDe(DateTime(quando.year, quando.month, quando.day), hoje);
+    grupos.putIfAbsent(rotulo, () => []).add(c);
+  }
+  return grupos;
+}
+
+String _rotuloDe(DateTime dia, DateTime hoje) {
+  final dias = hoje.difference(dia).inDays;
+  if (dias <= 0) return 'Hoje';
+  if (dias == 1) return 'Ontem';
+  if (dias < 7) return 'Últimos 7 dias';
+  if (dias < 30) return 'Últimos 30 dias';
+  return 'Mais antigas';
+}
+
+/// A ordem em que os grupos aparecem — do mais recente ao mais antigo.
+const ordemDosGrupos = [
+  'Hoje',
+  'Ontem',
+  'Últimos 7 dias',
+  'Últimos 30 dias',
+  'Mais antigas',
+  'Sem data',
+];
