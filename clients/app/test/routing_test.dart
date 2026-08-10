@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumbra_api/api.dart';
 import 'package:lumbra_app/core/api.dart';
+import 'package:lumbra_app/core/node_status.dart';
 import 'package:lumbra_app/core/session.dart';
 import 'package:lumbra_app/features/approvals/approvals_providers.dart';
 import 'package:lumbra_app/features/chat/chat_providers.dart';

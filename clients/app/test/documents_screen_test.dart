@@ -20,7 +20,7 @@ DocumentOut _documento({
   id: id,
   uri: uri,
   title: titulo,
-  source: 'filesystem',
+  source_: 'filesystem',
   processingState: estado,
   version: versao,
 );
@@ -85,6 +85,6 @@ void main() {
 
     expect(find.text('Indexar pasta'), findsWidgets);
     expect(find.textContaining('Nada sai do seu computador.'), findsOneWidget);
-    expect(find.widgetWithText(TextField, ''), findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
   });
 }

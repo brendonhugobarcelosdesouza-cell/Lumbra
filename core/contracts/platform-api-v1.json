@@ -942,6 +942,7 @@
         "type": "object"
       },
       "DocumentStatusOut": {
+        "description": "Por que aquele arquivo está (ou não está) pesquisável.\n\nEtapas e versões são TIPADAS, não dicionários livres. Dois motivos: o\ncliente gerado só sabe navegar o que tem forma — o gerador Dart produz\ncódigo quebrado para lista de objetos sem esquema (`Map.listFromJson`) —\ne um campo sem forma no contrato é um campo que ninguém consegue usar\nsem ler o código do servidor.",
         "properties": {
           "state": {
             "title": "State",
@@ -950,8 +951,7 @@
           "timeline": {
             "default": [],
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/TimelineEntryOut"
             },
             "title": "Timeline",
             "type": "array"
@@ -963,8 +963,7 @@
           "versions": {
             "default": [],
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/DocumentVersionOut"
             },
             "title": "Versions",
             "type": "array"
@@ -975,6 +974,51 @@
           "version"
         ],
         "title": "DocumentStatusOut",
+        "type": "object"
+      },
+      "DocumentVersionOut": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "indexed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Indexed At"
+          },
+          "parent_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Version"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "reason",
+          "created_at"
+        ],
+        "title": "DocumentVersionOut",
         "type": "object"
       },
       "DocumentsOut": {
@@ -1759,6 +1803,40 @@
           "privacy"
         ],
         "title": "StartOutput",
+        "type": "object"
+      },
+      "TimelineEntryOut": {
+        "description": "Uma etapa do pipeline naquele documento.",
+        "properties": {
+          "duration_ms": {
+            "title": "Duration Ms",
+            "type": "number"
+          },
+          "message": {
+            "default": "",
+            "title": "Message",
+            "type": "string"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "stage",
+          "started_at",
+          "duration_ms",
+          "success"
+        ],
+        "title": "TimelineEntryOut",
         "type": "object"
       },
       "TokenPair": {

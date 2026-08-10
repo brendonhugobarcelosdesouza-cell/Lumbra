@@ -65,11 +65,38 @@ class IndexOut(BaseModel):
     new_versions: int
 
 
+class TimelineEntryOut(BaseModel):
+    """Uma etapa do pipeline naquele documento."""
+
+    stage: str
+    started_at: str
+    duration_ms: float
+    success: bool
+    message: str = ""
+
+
+class DocumentVersionOut(BaseModel):
+    version: int
+    parent_version: int | None = None
+    reason: str
+    created_at: str
+    indexed_at: str | None = None
+
+
 class DocumentStatusOut(BaseModel):
+    """Por que aquele arquivo está (ou não está) pesquisável.
+
+    Etapas e versões são TIPADAS, não dicionários livres. Dois motivos: o
+    cliente gerado só sabe navegar o que tem forma — o gerador Dart produz
+    código quebrado para lista de objetos sem esquema (`Map.listFromJson`) —
+    e um campo sem forma no contrato é um campo que ninguém consegue usar
+    sem ler o código do servidor.
+    """
+
     state: str
     version: int
-    timeline: tuple[dict[str, Any], ...] = ()
-    versions: tuple[dict[str, Any], ...] = ()
+    timeline: tuple[TimelineEntryOut, ...] = ()
+    versions: tuple[DocumentVersionOut, ...] = ()
 
 
 def build_documents_router(
@@ -142,7 +169,34 @@ def build_documents_router(
         """Estado, linha do tempo e versões — por que aquele arquivo está
         (ou não está) pesquisável."""
         result = await _run("document.status", {"document_id": document_id}, claims)
-        return dict(result.model_dump(mode="json"))
+        # a skill devolve dicionários; a API dá forma a eles (só os campos do
+        # contrato passam — o que o pipeline guarda a mais não vaza)
+        return {
+            "state": result.state,
+            "version": result.version,
+            "timeline": [
+                {
+                    "stage": t.get("stage", ""),
+                    "started_at": str(t.get("started_at", "")),
+                    "duration_ms": float(t.get("duration_ms", 0)),
+                    "success": bool(t.get("success", False)),
+                    "message": t.get("message", ""),
+                }
+                for t in result.timeline
+            ],
+            "versions": [
+                {
+                    "version": int(v.get("version", 0)),
+                    "parent_version": v.get("parent_version"),
+                    "reason": v.get("reason", ""),
+                    "created_at": str(v.get("created_at", "")),
+                    "indexed_at": (
+                        str(v["indexed_at"]) if v.get("indexed_at") is not None else None
+                    ),
+                }
+                for v in result.versions
+            ],
+        }
 
     return router
 
