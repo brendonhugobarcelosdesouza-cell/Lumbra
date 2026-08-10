@@ -6,6 +6,7 @@ import '../approvals/approvals_providers.dart';
 import '../approvals/approvals_screen.dart';
 import '../chat/conversations_screen.dart';
 import '../devices/devices_screen.dart';
+import '../memories/memories_screen.dart';
 import '../playbooks/playbooks_screen.dart';
 
 /// A moldura do app no desktop: uma barra lateral de seções.
@@ -62,6 +63,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                 label: const Text('Aprovações'),
               ),
               const NavigationRailDestination(
+                icon: Icon(Icons.psychology_outlined),
+                selectedIcon: Icon(Icons.psychology),
+                label: Text('Memória'),
+              ),
+              const NavigationRailDestination(
                 icon: Icon(Icons.menu_book_outlined),
                 selectedIcon: Icon(Icons.menu_book),
                 label: Text('Procedimentos'),
@@ -96,6 +102,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               children: const [
                 ConversationsScreen(),
                 ApprovalsScreen(),
+                MemoriesScreen(),
                 PlaybooksScreen(),
                 DevicesScreen(),
               ],
