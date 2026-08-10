@@ -60,6 +60,7 @@ from lumbra.api.approvals import build_approvals_router
 from lumbra.api.auth import AuthServices
 from lumbra.api.chat import build_chat_router
 from lumbra.api.devices import build_devices_router
+from lumbra.api.documents import build_documents_router
 from lumbra.api.memory import build_memory_router
 from lumbra.api.playbooks import build_playbooks_router
 from lumbra.api.system import build_system_router
@@ -96,7 +97,7 @@ from lumbra.ports.attachments import AttachmentStorePort
 from lumbra.ports.capabilities import CapabilitySpec
 from lumbra.ports.conversations import ConversationStorePort
 from lumbra.ports.devices import DeviceStorePort
-from lumbra.ports.document_store import DocumentRecord
+from lumbra.ports.document_store import DocumentRecord, DocumentStorePort
 from lumbra.ports.event_bus import EventBusPort
 from lumbra.ports.event_store import EventStorePort
 from lumbra.ports.memory import MemoryStorePort
@@ -224,8 +225,11 @@ def create_default_app() -> FastAPI:
     kernel.context.register(MemoryContextProvider(kernel.skills))
 
     dev_router = None
+    # o acervo só existe com banco; a ROTA existe sempre (ver documents.py)
+    documents_store: DocumentStorePort | None = None
     if db is not None:
         documents = PostgresDocumentStore(db)
+        documents_store = documents
         processing = PostgresProcessingStore(db)
         graph = PostgresKnowledgeGraph(db)
         search = PostgresSearch(db)
@@ -340,6 +344,7 @@ def create_default_app() -> FastAPI:
         build_devices_router(kernel, device_store, auth.tokens),
         build_agents_router(kernel, _mrs(auth.tokens)),
         build_playbooks_router(kernel, playbook_store, _mrs(auth.tokens)),
+        build_documents_router(kernel, documents_store, _mrs(auth.tokens)),
         build_approvals_router(
             ApprovalService(kernel.skills, approval_store, publish=kernel.publish),
             _mrs(auth.tokens),

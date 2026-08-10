@@ -5,6 +5,7 @@ import 'package:lumbra_app/core/api.dart';
 import 'package:lumbra_app/core/session.dart';
 import 'package:lumbra_app/features/approvals/approvals_providers.dart';
 import 'package:lumbra_app/features/chat/chat_providers.dart';
+import 'package:lumbra_app/features/documents/documents_providers.dart';
 import 'package:lumbra_app/features/memories/memories_providers.dart';
 import 'package:lumbra_app/features/playbooks/playbooks_providers.dart';
 import 'package:lumbra_app/main.dart';
@@ -52,6 +53,7 @@ void main() {
           ),
           playbooksProvider.overrideWith((ref) async => const <PlaybookOut>[]),
           memoriesProvider.overrideWith((ref) async => const <MemoryItemOut>[]),
+          documentsProvider.overrideWith((ref) async => const <DocumentOut>[]),
           devicesListProvider.overrideWith((ref) async => const <DeviceResponse>[]),
         ],
         child: const LumbraApp(),

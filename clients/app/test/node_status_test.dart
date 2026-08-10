@@ -6,6 +6,7 @@ import 'package:lumbra_app/core/node_status.dart';
 import 'package:lumbra_app/core/session.dart';
 import 'package:lumbra_app/features/approvals/approvals_providers.dart';
 import 'package:lumbra_app/features/chat/chat_providers.dart';
+import 'package:lumbra_app/features/documents/documents_providers.dart';
 import 'package:lumbra_app/features/memories/memories_providers.dart';
 import 'package:lumbra_app/features/playbooks/playbooks_providers.dart';
 import 'package:lumbra_app/main.dart';
@@ -40,6 +41,7 @@ Future<void> _montar(WidgetTester tester, NodeState estado, {NoFixo? no}) async 
         pendingApprovalsProvider.overrideWith((ref) async => const <ApprovalOut>[]),
         playbooksProvider.overrideWith((ref) async => const <PlaybookOut>[]),
         memoriesProvider.overrideWith((ref) async => const <MemoryItemOut>[]),
+        documentsProvider.overrideWith((ref) async => const <DocumentOut>[]),
       ],
       child: const LumbraApp(),
     ),

@@ -874,6 +874,123 @@
         "title": "DeviceState",
         "type": "string"
       },
+      "DocumentOut": {
+        "description": "Um documento do acervo, com o estado do pipeline junto.\n\n``processing_state`` vai na lista de propósito: saber que um arquivo foi\nvisto mas ainda não indexado é a diferença entre \"a Lumbra não sabe\" e\n\"a Lumbra ainda não terminou\".",
+        "properties": {
+          "doc_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doc Kind"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "mime_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime Type"
+          },
+          "processing_state": {
+            "title": "Processing State",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "uri": {
+            "title": "Uri",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "uri",
+          "source",
+          "version",
+          "processing_state"
+        ],
+        "title": "DocumentOut",
+        "type": "object"
+      },
+      "DocumentStatusOut": {
+        "properties": {
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "timeline": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Timeline",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "versions": {
+            "default": [],
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "state",
+          "version"
+        ],
+        "title": "DocumentStatusOut",
+        "type": "object"
+      },
+      "DocumentsOut": {
+        "properties": {
+          "documents": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DocumentOut"
+            },
+            "title": "Documents",
+            "type": "array"
+          }
+        },
+        "title": "DocumentsOut",
+        "type": "object"
+      },
       "ExecuteBody": {
         "properties": {
           "capability": {
@@ -966,6 +1083,53 @@
           }
         },
         "title": "HistoryResponse",
+        "type": "object"
+      },
+      "IndexBody": {
+        "properties": {
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "path": {
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "IndexBody",
+        "type": "object"
+      },
+      "IndexOut": {
+        "properties": {
+          "discovered": {
+            "title": "Discovered",
+            "type": "integer"
+          },
+          "new_versions": {
+            "title": "New Versions",
+            "type": "integer"
+          },
+          "queued": {
+            "title": "Queued",
+            "type": "integer"
+          },
+          "unchanged": {
+            "title": "Unchanged",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "discovered",
+          "queued",
+          "unchanged",
+          "new_versions"
+        ],
+        "title": "IndexOut",
         "type": "object"
       },
       "MemoryHitOut": {
@@ -2839,6 +3003,150 @@
         "summary": "Revoke",
         "tags": [
           "devices"
+        ]
+      }
+    },
+    "/api/v1/documents": {
+      "get": {
+        "description": "O acervo do usuário — o que a Lumbra leu.",
+        "operationId": "list_documents_api_v1_documents_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Documents",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/documents/index": {
+      "post": {
+        "description": "Indexa uma pasta local. Devolve o que foi DESCOBERTO e o que foi\nenfileirado — indexar é assíncrono, e prometer 'pronto' aqui seria\nmentira: quem termina é o worker.",
+        "operationId": "index_folder_api_v1_documents_index_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IndexBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndexOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Index Folder",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/api/v1/documents/{document_id}/status": {
+      "get": {
+        "description": "Estado, linha do tempo e versões — por que aquele arquivo está\n(ou não está) pesquisável.",
+        "operationId": "document_status_api_v1_documents__document_id__status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Document Status",
+        "tags": [
+          "documents"
         ]
       }
     },
