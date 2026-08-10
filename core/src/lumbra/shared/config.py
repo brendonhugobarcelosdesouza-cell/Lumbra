@@ -27,6 +27,9 @@ class DatabaseSettings(BaseModel):
     dsn: SecretStr = SecretStr("postgresql+asyncpg://lumbra:lumbra@localhost:5432/lumbra")
     pool_size: int = Field(default=10, ge=1, le=100)
     echo: bool = False
+    # Onde mora o banco embutido (LUMBRA_PERSISTENCE=embedded). None = a
+    # pasta de dados do sistema; ver lumbra.shared.paths.
+    embedded_dir: str | None = None
 
 
 class RedisSettings(BaseModel):
@@ -112,7 +115,10 @@ class Settings(BaseSettings):
 
     environment: Environment = "local"
     eventbus: Literal["memory", "redis"] = "memory"
-    persistence: Literal["memory", "postgres"] = "memory"
+    # memory   — sem banco: Nó leve, para desenvolvimento e testes
+    # postgres — um Postgres que ALGUÉM subiu (docker compose, servidor)
+    # embedded — o Nó sobe o próprio Postgres, sem Docker (P2-f.1, ADR-069)
+    persistence: Literal["memory", "postgres", "embedded"] = "memory"
     database: DatabaseSettings = DatabaseSettings()
     redis: RedisSettings = RedisSettings()
     security: SecuritySettings = SecuritySettings()
@@ -123,6 +129,18 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
+
+    @property
+    def com_banco(self) -> bool:
+        """Há um PostgreSQL por trás — não importa quem o subiu.
+
+        Existe para que nenhum lugar do código precise saber a diferença
+        entre ``postgres`` e ``embedded``: quem sobe o banco é decisão de
+        implantação, e o comportamento da plataforma é o mesmo nos dois.
+        Antes disso havia três ``settings.persistence == "postgres"``
+        espalhados que teriam virado, em silêncio, "sem banco" no modo novo.
+        """
+        return self.persistence in ("postgres", "embedded")
 
 
 @lru_cache(maxsize=1)

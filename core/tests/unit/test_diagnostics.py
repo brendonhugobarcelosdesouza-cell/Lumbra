@@ -131,6 +131,22 @@ class TestVerificacoesIndividuais:
         assert resultado.status is Status.WARN
         assert "reinícios" in resultado.summary
 
+    async def test_embutido_e_diagnosticado_como_banco_de_verdade(self):
+        """A regressão que este teste tranca: no modo embedded o diagnóstico
+        dizia "persistência em memória — nada é salvo", que é falso e
+        assustador. Os três checks de banco comparavam com "postgres" e não
+        conheciam o modo novo."""
+        resultado = await checks.check_postgres(
+            _settings(
+                persistence="embedded",
+                database=DatabaseSettings(
+                    dsn=SecretStr("postgresql+asyncpg://ninguem@127.0.0.1:1/nada")
+                ),
+            )
+        )
+        assert resultado.status is Status.FAIL  # tentou conectar, não deu de ombros
+        assert "memória" not in resultado.summary
+
     async def test_banco_inacessivel_explica_o_que_fazer(self):
         resultado = await checks.check_postgres(
             _settings(

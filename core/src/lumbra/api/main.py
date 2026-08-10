@@ -1,9 +1,11 @@
 """Composição de runtime da API — ponto de entrada do uvicorn/Docker.
 
 Monta o LumbraKernel com adaptadores selecionados por configuração:
-``LUMBRA_EVENTBUS=memory|redis`` e ``LUMBRA_PERSISTENCE=memory|postgres``
-selecionam os adaptadores. Perfil compose/cloud: redis + postgres, com
-readiness checks reais; dev sem infraestrutura: tudo in-memory.
+``LUMBRA_EVENTBUS=memory|redis`` e ``LUMBRA_PERSISTENCE=memory|postgres|
+embedded`` selecionam os adaptadores. Perfil compose/cloud: redis +
+postgres, com readiness checks reais; dev sem infraestrutura: tudo
+in-memory; máquina do usuário: ``embedded``, o Nó sobe o próprio Postgres
+sem Docker (ADR-069).
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
+from pydantic import SecretStr
 from redis.asyncio import Redis
 
 from lumbra.adapters.ai.anthropic import AnthropicChatProvider
@@ -41,6 +44,7 @@ from lumbra.adapters.metadata.regex_extractors import default_extractors
 from lumbra.adapters.metrics.in_memory import InMemoryMetrics
 from lumbra.adapters.permissions.static import StaticPermissionAdapter
 from lumbra.adapters.persistence.database import Database
+from lumbra.adapters.persistence.embedded import preparar_banco
 from lumbra.adapters.playbooks.in_memory import InMemoryPlaybookStore
 from lumbra.adapters.playbooks.postgres import PostgresPlaybookStore
 from lumbra.adapters.search.postgres import PostgresSearch
@@ -123,8 +127,20 @@ def create_default_app() -> FastAPI:
     db: Database | None = None
     event_store: EventStorePort
     users: UserStorePort
-    if settings.persistence == "postgres":
-        db = Database(settings.database)
+    if settings.com_banco:
+        # 'postgres' e 'embedded' são o MESMO caminho daqui para baixo: a
+        # única diferença é quem subiu o servidor (ADR-069). Se a diferença
+        # vazasse para além desta linha, o modo novo viraria um segundo
+        # comportamento a manter em vez de uma opção de implantação.
+        # o handle do servidor não é guardado aqui de propósito: quem conta
+        # os usuários é o pgserver, e ele só desliga o Postgres quando o
+        # ÚLTIMO processo solta. Guardar aqui daria a impressão de que esta
+        # fábrica manda no ciclo de vida — não manda, e sob `--reload` são
+        # dois processos disputando o mesmo banco.
+        dsn, _servidor = preparar_banco(
+            settings.database, embutido=settings.persistence == "embedded"
+        )
+        db = Database(settings.database.model_copy(update={"dsn": SecretStr(dsn)}))
         event_store = PostgresEventStore(db)
         users = PostgresUserStore(db)
     else:

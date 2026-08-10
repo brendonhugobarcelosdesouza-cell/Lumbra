@@ -30,6 +30,10 @@ dependencies = [
     "fastembed>=0.7",
     "argon2-cffi>=23.1",
     "cryptography>=43.0",  # Ed25519: identidade por par de chaves (ADR-045)
+    # PostgreSQL 16 + pgvector empacotados dentro do pacote Python: é o que
+    # permite o Nó rodar na máquina do usuário sem Docker (ADR-069). Era
+    # dependência só de teste; virou modo de execução.
+    "pgserver>=0.1.4",
 ]
 
 [project.optional-dependencies]
@@ -43,7 +47,6 @@ dev = [
     # lá". Fixar garante que o gate seja idêntico em toda máquina.
     "ruff==0.16.0",
     "mypy==2.3.0",
-    "pgserver>=0.1.4",
 ]
 
 [project.scripts]

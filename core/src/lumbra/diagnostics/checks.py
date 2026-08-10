@@ -201,13 +201,14 @@ async def check_postgres(settings: Settings) -> CheckResult:
 
     from lumbra.adapters.persistence.database import Database
 
-    if settings.persistence != "postgres":
+    if not settings.com_banco:
         return CheckResult(
             "postgres",
             Status.WARN,
             "persistência em memória — nada é salvo entre reinícios",
             detail="Documentos, memórias e conversas somem ao parar o processo.",
-            fix="Defina LUMBRA_PERSISTENCE=postgres (e suba o banco com `lumbra dev`).",
+            fix="Defina LUMBRA_PERSISTENCE=embedded (o Nó sobe o próprio "
+            "Postgres, sem Docker) ou =postgres apontando para um banco seu.",
         )
     db = Database(settings.database)
     try:
@@ -247,7 +248,7 @@ async def check_migracoes(settings: Settings) -> CheckResult:
 
     from lumbra.adapters.persistence.database import Database
 
-    if settings.persistence != "postgres":
+    if not settings.com_banco:
         return CheckResult("migracoes", Status.SKIP, "sem banco relacional configurado")
     revisoes = sorted(
         p.name.split("_")[0]
@@ -293,7 +294,7 @@ async def check_indices(settings: Settings) -> CheckResult:
 
     from lumbra.adapters.persistence.database import Database
 
-    if settings.persistence != "postgres":
+    if not settings.com_banco:
         return CheckResult("indices", Status.SKIP, "sem banco relacional configurado")
     esperados = {
         "ix_chunks_embedding": "vetorial de documentos",

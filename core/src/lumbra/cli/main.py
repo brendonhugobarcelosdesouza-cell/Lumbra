@@ -113,7 +113,31 @@ def _compose_disponivel() -> bool:
     )
 
 
+def _preparar_embutido() -> bool:
+    """Sobe o Postgres do próprio Nó e aponta a configuração para ele.
+
+    A variável de ambiente é o canal certo, e não um parâmetro: sob
+    ``--reload`` o uvicorn cria um processo FILHO que monta a aplicação de
+    novo, e ele precisa achar o mesmo banco. Passando por argumento, o pai
+    migraria um banco e o filho abriria outro — sintoma: "tabela não existe"
+    logo depois de uma migração que deu certo.
+    """
+    from lumbra.adapters.persistence.embedded import preparar_banco
+
+    settings = _settings()
+    if settings.persistence != "embedded":
+        return False
+    console.linha("Subindo o Postgres embutido (sem Docker)...")
+    dsn, servidor = preparar_banco(settings.database, embutido=True)
+    os.environ["LUMBRA_DATABASE__DSN"] = dsn
+    get_settings.cache_clear()
+    console.linha(console.cor(f"  dados em {servidor.pasta if servidor else '?'}", "azul"))
+    return True
+
+
 def _subir_servicos() -> bool:
+    if _preparar_embutido():
+        return True
     if not _compose_disponivel():
         console.linha(
             console.cor(
