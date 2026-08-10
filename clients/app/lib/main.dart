@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+// AppExitResponse mora em services, não em material
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/node_process.dart';

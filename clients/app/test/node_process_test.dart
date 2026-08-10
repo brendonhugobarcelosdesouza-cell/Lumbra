@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumbra_api/api.dart';
@@ -24,24 +23,20 @@ import 'session_test.dart';
 /// "o Nó morre sozinho".
 
 class _GerenteFalso implements GerenteDoNo {
-  _GerenteFalso({this.resultado = PartidaDoNo.iniciado, this.donos = true});
-
-  final PartidaDoNo resultado;
-  final bool donos;
   var iniciadas = 0;
   var paradas = 0;
 
   @override
   Future<PartidaDoNo> iniciar() async {
     iniciadas++;
-    return resultado;
+    return PartidaDoNo.iniciado;
   }
 
   @override
   Future<void> parar() async => paradas++;
 
   @override
-  bool get somosDonos => donos;
+  bool get somosDonos => iniciadas > paradas;
 
   @override
   String get ultimoErro => '';

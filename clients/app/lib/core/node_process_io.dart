@@ -1,8 +1,14 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
 import 'node_process.dart';
+
+/// `--no-reload` de propósito: com recarga automática o Nó vira uma ÁRVORE de
+/// processos, e matar o pai deixaria o filho vivo segurando a porta. Recarga
+/// é ferramenta de quem edita o Core, não de quem usa o app.
+const _argumentos = ['dev', '--no-reload'];
 
 /// Sobe o Nó como processo filho no desktop (ADR-046).
 ///
@@ -91,7 +97,7 @@ class GerenteDoNoDesktop implements GerenteDoNo {
     //    instalado noutro lugar, ou para um script de depuração).
     const definido = String.fromEnvironment('LUMBRA_NODE_EXE');
     if (definido.isNotEmpty && File(definido).existsSync()) {
-      return _Comando(definido, const ['dev', '--no-reload'], null);
+      return const _Comando(definido, _argumentos, null);
     }
 
     // 2. Ao lado do app — o que o instalador vai produzir (ADR-046).
@@ -99,7 +105,7 @@ class GerenteDoNoDesktop implements GerenteDoNo {
       '${File(Platform.resolvedExecutable).parent.path}'
       '${Platform.pathSeparator}no${Platform.pathSeparator}$_nomeDoExecutavel',
     );
-    if (aoLado.existsSync()) return _Comando(aoLado.path, const ['dev', '--no-reload'], null);
+    if (aoLado.existsSync()) return _Comando(aoLado.path, _argumentos, null);
 
     // 3. Desenvolvimento: sobe do diretório atual procurando o venv do
     //    repositório. Não fixamos caminho de máquina nenhuma.
@@ -114,7 +120,7 @@ class GerenteDoNoDesktop implements GerenteDoNo {
         final core = Directory('${dir.path}${Platform.pathSeparator}core');
         return _Comando(
           candidato.path,
-          const ['dev', '--no-reload'],
+          _argumentos,
           core.existsSync() ? core.path : dir.path,
         );
       }
