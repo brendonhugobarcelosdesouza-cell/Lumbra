@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumbra_api/api.dart';
 
+import 'document_status_screen.dart';
 import 'documents_providers.dart';
 
 /// O acervo: o que a Lumbra leu, e em que pé está.
@@ -192,6 +193,16 @@ class _Documento extends StatelessWidget {
           '${estadosDoPipeline[documento.processingState] ?? documento.processingState}'
           '${documento.version > 1 ? ' · versão ${documento.version}' : ''}',
           style: textos.bodySmall,
+        ),
+        trailing: const Icon(Icons.chevron_right, size: 20),
+        // a lista diz O QUE aconteceu; tocar mostra ONDE
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => DocumentStatusScreen(
+              documentId: documento.id,
+              titulo: documento.title ?? _nomeDoArquivo(documento.uri),
+            ),
+          ),
         ),
       ),
     );
