@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/node_process.dart';
 import 'core/node_status.dart';
 import 'core/session.dart';
 import 'core/theme.dart';
@@ -14,8 +15,36 @@ void main() {
   runApp(const ProviderScope(child: LumbraApp()));
 }
 
-class LumbraApp extends StatelessWidget {
+class LumbraApp extends ConsumerStatefulWidget {
   const LumbraApp({super.key});
+
+  @override
+  ConsumerState<LumbraApp> createState() => _LumbraAppState();
+}
+
+class _LumbraAppState extends ConsumerState<LumbraApp> {
+  AppLifecycleListener? _ciclo;
+
+  @override
+  void initState() {
+    super.initState();
+    // Fechar a janela derruba o Nó que NÓS subimos (ADR-046). Sem isto, cada
+    // abertura do app deixaria para trás um servidor segurando a porta — e o
+    // sintoma seria a próxima execução "funcionando" contra um Nó velho, com
+    // código antigo. O gerente ignora o pedido quando o Nó é de outra pessoa.
+    _ciclo = AppLifecycleListener(
+      onExitRequested: () async {
+        await ref.read(gerenteDoNoProvider).parar();
+        return AppExitResponse.exit;
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _ciclo?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -44,11 +73,44 @@ class _Raiz extends ConsumerWidget {
     // credencial seria a explicação errada para "o servidor não está no ar"
     final no = ref.watch(nodeStateProvider);
     if (no == NodeState.foraDoAr) return const NodeOfflineScreen();
+    // 'subindo' é espera, não erro: mostramos o que está acontecendo em vez
+    // de acusar o Nó de ausente enquanto ele nasce
+    if (no == NodeState.subindo) return const _Subindo();
 
     final sessao = ref.watch(sessionControllerProvider);
     if (no == NodeState.verificando || (sessao.isLoading && !sessao.hasValue)) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     return sessao.valueOrNull != null ? const HomeShell() : const LoginScreen();
+  }
+}
+
+/// A espera enquanto o Nó nasce.
+///
+/// Diz o que está acontecendo em vez de girar em silêncio: a primeira partida
+/// carrega o modelo de embeddings e pode levar alguns segundos, e um app que
+/// só mostra um círculo nesse tempo parece travado.
+class _Subindo extends StatelessWidget {
+  const _Subindo();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 20),
+            Text('Iniciando o Nó…', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 6),
+            Text(
+              'A primeira vez demora um pouco mais.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
