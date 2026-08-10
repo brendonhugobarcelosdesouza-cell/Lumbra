@@ -46,7 +46,7 @@ class NodeOfflineScreen extends ConsumerWidget {
                 const SizedBox(height: 20),
                 Text('Para subir:', style: textos.labelLarge),
                 const SizedBox(height: 8),
-                _Comando(comando: _comando),
+                const _Comando(comando: _comando),
                 const SizedBox(height: 20),
                 Row(
                   children: [
