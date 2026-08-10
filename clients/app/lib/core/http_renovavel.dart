@@ -1,4 +1,7 @@
-import 'package:http/http.dart' show Response;
+// O cliente gerado é uma biblioteca `part of`: dentro dela os tipos do http
+// são visíveis, mas ela não os reexporta. Quem estende o ApiClient de fora
+// precisa importá-los por conta própria.
+import 'package:http/http.dart' show MultipartFile, MultipartRequest, Response;
 import 'package:lumbra_api/api.dart';
 
 /// Cliente HTTP que renova o token quando o Nó responde 401 (ADR-068).
