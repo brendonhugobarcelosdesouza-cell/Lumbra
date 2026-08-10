@@ -9,6 +9,7 @@ import 'package:lumbra_app/features/memories/memories_providers.dart';
 import 'package:lumbra_app/features/playbooks/playbooks_providers.dart';
 import 'package:lumbra_app/main.dart';
 
+import 'node_status_test.dart';
 import 'session_test.dart';
 
 void main() {
@@ -16,6 +17,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          // o Nó vem antes de tudo na raiz do app: sem sobrepor, o teste
+          // acabaria na tela de "Nó fora do ar"
+          nodeStateProvider.overrideWith(() => NoFixo(NodeState.noAr)),
           tokenStorageProvider.overrideWithValue(FakeTokenStorage()),
         ],
         child: const LumbraApp(),
@@ -31,6 +35,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          nodeStateProvider.overrideWith(() => NoFixo(NodeState.noAr)),
           tokenStorageProvider.overrideWithValue(
             FakeTokenStorage(
               const Session(accessToken: 'abc', refreshToken: 'ref'),

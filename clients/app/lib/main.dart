@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/node_status.dart';
 import 'core/session.dart';
 import 'core/theme.dart';
 import 'features/auth/login_screen.dart';
 import 'features/shell/home_shell.dart';
+import 'features/shell/node_offline_screen.dart';
 
 void main() {
   // ProviderScope: a raiz do Riverpod (ADR-048). Todo estado do app vive
@@ -38,8 +40,13 @@ class _Raiz extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // o Nó vem ANTES da sessão: sem servidor não há login, e um erro de
+    // credencial seria a explicação errada para "o servidor não está no ar"
+    final no = ref.watch(nodeStateProvider);
+    if (no == NodeState.foraDoAr) return const NodeOfflineScreen();
+
     final sessao = ref.watch(sessionControllerProvider);
-    if (sessao.isLoading && !sessao.hasValue) {
+    if (no == NodeState.verificando || (sessao.isLoading && !sessao.hasValue)) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     return sessao.valueOrNull != null ? const HomeShell() : const LoginScreen();
