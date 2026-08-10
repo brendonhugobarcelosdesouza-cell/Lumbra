@@ -62,10 +62,14 @@ void main() {
     expect(find.text('indexed'), findsNothing);
   });
 
-  testWidgets('versão só aparece quando há mais de uma', (tester) async {
+  // dois testes e não um com dois `pumpWidget`: remontar a árvore no meio do
+  // teste mistura estados e esconde qual metade quebrou
+  testWidgets('documento reindexado mostra a versão', (tester) async {
     await _montar(tester, [_documento(versao: 3)]);
     expect(find.textContaining('versão 3'), findsOneWidget);
+  });
 
+  testWidgets('na primeira versão, o número não polui', (tester) async {
     await _montar(tester, [_documento(versao: 1)]);
     expect(find.textContaining('versão'), findsNothing);
   });

@@ -31,7 +31,16 @@ class NoFixo extends EstadoDoNo {
   Future<void> verificarAgora() async => pedidosDeNovaTentativa++;
 }
 
-Future<void> _montar(WidgetTester tester, NodeState estado, {NoFixo? no}) async {
+/// [assentar] existe por causa da tela de "verificando": ela mostra um
+/// CircularProgressIndicator, que anima PARA SEMPRE — e `pumpAndSettle`
+/// espera a árvore parar de animar, então estoura por timeout. Um quadro
+/// basta para conferir o que está na tela.
+Future<void> _montar(
+  WidgetTester tester,
+  NodeState estado, {
+  NoFixo? no,
+  bool assentar = true,
+}) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -46,7 +55,11 @@ Future<void> _montar(WidgetTester tester, NodeState estado, {NoFixo? no}) async 
       child: const LumbraApp(),
     ),
   );
-  await tester.pumpAndSettle();
+  if (assentar) {
+    await tester.pumpAndSettle();
+  } else {
+    await tester.pump();
+  }
 }
 
 void main() {
@@ -77,7 +90,7 @@ void main() {
 
   testWidgets('enquanto verifica, não acusa nada', (tester) async {
     // o susto de "está fora do ar" não pode aparecer antes da resposta
-    await _montar(tester, NodeState.verificando);
+    await _montar(tester, NodeState.verificando, assentar: false);
     expect(find.text('O Nó não está no ar'), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
   });
