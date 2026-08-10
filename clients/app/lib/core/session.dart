@@ -102,9 +102,25 @@ class SessionController extends AsyncNotifier<Session?> {
   /// Renova o par de tokens com o refresh token. Chamado por timer (proativo,
   /// antes de expirar) e após um 401 (reativo). Se o refresh também expirou
   /// (14 dias), desloga.
-  Future<void> refresh() async {
+  Future<void> refresh() => renovarAgora();
+
+  /// Renova e diz se valeu: `true` quando existe um token novo para tentar de
+  /// novo, `false` quando a sessão acabou de verdade (e já foi encerrada).
+  ///
+  /// Uma renovação por vez. Ao abrir o app com o token vencido, as seis abas
+  /// disparam juntas e todas levam 401 ao mesmo tempo; sem esta trava seriam
+  /// seis renovações simultâneas, e as cinco perdedoras usariam um refresh
+  /// token que a primeira já rodou — o servidor recusaria e nós
+  /// deslogaríamos o usuário por excesso de zelo.
+  Future<bool> renovarAgora() {
+    return _emCurso ??= _renovar().whenComplete(() => _emCurso = null);
+  }
+
+  Future<bool>? _emCurso;
+
+  Future<bool> _renovar() async {
     final atual = state.valueOrNull;
-    if (atual == null) return;
+    if (atual == null || atual.refreshToken.isEmpty) return false;
     try {
       final pair = await _auth.refreshApiV1AuthRefreshPost(
         RefreshRequest(refreshToken: atual.refreshToken),
@@ -112,8 +128,13 @@ class SessionController extends AsyncNotifier<Session?> {
       final nova = await _guardar(pair);
       state = AsyncValue.data(nova);
       _agendarRenovacao();
+      return true;
     } catch (_) {
+      // O refresh também venceu: não há mais como provar quem é o usuário.
+      // Deslogar é a resposta honesta — a tela de login diz o que aconteceu,
+      // enquanto "ApiException 401" em seis abas não dizia nada.
       await logout();
+      return false;
     }
   }
 

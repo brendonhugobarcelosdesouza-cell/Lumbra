@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumbra_api/api.dart';
 
+import 'http_renovavel.dart';
 import 'session.dart';
 
 /// URL do Nó Lumbra. No P2-e o app passará a subir e gerenciar o Nó como
@@ -23,14 +24,22 @@ final authApiProvider = Provider<AuthApi>(
   (ref) => AuthApi(ref.watch(_plainApiClientProvider)),
 );
 
-/// Cliente AUTENTICADO: injeta o Bearer da sessão. Reconstrói quando o
-/// token muda (login/logout), então as APIs abaixo passam a carregar (ou
-/// deixar de carregar) o Authorization automaticamente. É a única porta do
-/// app para o Core (docs/24, Regra 1): nenhuma requisição HTTP à mão.
+/// Cliente AUTENTICADO: injeta o Bearer da sessão e renova sozinho quando o
+/// Nó responde 401 (ADR-068). É a única porta do app para o Core (docs/24,
+/// Regra 1): nenhuma requisição HTTP à mão.
+///
+/// Observa apenas se EXISTE sessão, não qual é o token. A diferença é
+/// visível: antes, cada renovação (a cada 10 minutos) trocava a identidade do
+/// provider e fazia todas as telas recarregarem do zero — a lista de
+/// conversas piscava sem que nada tivesse mudado. Agora só entrar e sair
+/// reconstroem o cliente; o token é lido a cada requisição.
 final apiClientProvider = Provider<ApiClient>((ref) {
-  final token = ref.watch(sessionControllerProvider).valueOrNull?.accessToken;
-  final auth = token == null ? null : (HttpBearerAuth()..accessToken = token);
-  return ApiClient(basePath: noBaseUrl, authentication: auth);
+  ref.watch(sessionControllerProvider.select((s) => s.valueOrNull != null));
+  return ClienteRenovavel(
+    basePath: noBaseUrl,
+    tokenAtual: () => ref.read(sessionControllerProvider).valueOrNull?.accessToken,
+    renovar: () => ref.read(sessionControllerProvider.notifier).renovarAgora(),
+  );
 });
 
 /// API de operações (health/ready/system) sobre o cliente configurado.

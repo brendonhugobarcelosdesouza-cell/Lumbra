@@ -93,4 +93,95 @@ void main() {
     expect(container.read(sessionControllerProvider).valueOrNull, isNull);
     expect(await fake.read(), isNull);
   });
+
+  group('renovação depois de um 401 (ADR-068)', () {
+    test('seis abas pedindo junto renovam UMA vez', () async {
+      // é o cenário real de abrir o app com o token vencido: as seis telas
+      // disparam juntas e levam 401 ao mesmo tempo. Sem trava, as cinco
+      // renovações perdedoras usariam um refresh token já gasto e o usuário
+      // seria deslogado por excesso de zelo.
+      final auth = _AuthContando();
+      final container = ProviderContainer(
+        overrides: [
+          tokenStorageProvider.overrideWithValue(
+            FakeTokenStorage(const Session(accessToken: 'velho', refreshToken: 'ref')),
+          ),
+          authApiProvider.overrideWithValue(auth),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(sessionControllerProvider.future);
+
+      final ctrl = container.read(sessionControllerProvider.notifier);
+      final resultados = await Future.wait(List.generate(6, (_) => ctrl.renovarAgora()));
+
+      expect(resultados, everyElement(isTrue));
+      expect(auth.chamadas, 1);
+    });
+
+    test('refresh vencido desliga a sessão e diz que não adianta tentar', () async {
+      final fake = FakeTokenStorage(
+        const Session(accessToken: 'velho', refreshToken: 'tambem-vencido'),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          tokenStorageProvider.overrideWithValue(fake),
+          authApiProvider.overrideWithValue(_AuthQueRecusa()),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(sessionControllerProvider.future);
+
+      final ok = await container.read(sessionControllerProvider.notifier).renovarAgora();
+
+      expect(ok, isFalse);
+      // deslogar é a resposta honesta: a tela de login explica o que houve,
+      // enquanto "ApiException 401" em seis abas não explicava nada
+      expect(container.read(sessionControllerProvider).valueOrNull, isNull);
+      expect(await fake.read(), isNull);
+    });
+
+    test('sem refresh token guardado, nem tenta a rede', () async {
+      final auth = _AuthContando();
+      final container = ProviderContainer(
+        overrides: [
+          tokenStorageProvider.overrideWithValue(
+            FakeTokenStorage(const Session(accessToken: 'velho', refreshToken: '')),
+          ),
+          authApiProvider.overrideWithValue(auth),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(sessionControllerProvider.future);
+
+      expect(await container.read(sessionControllerProvider.notifier).renovarAgora(), isFalse);
+      expect(auth.chamadas, 0);
+    });
+  });
+}
+
+/// Conta quantas renovações chegaram até a rede.
+class _AuthContando extends AuthApi {
+  var chamadas = 0;
+
+  @override
+  Future<TokenPair?> refreshApiV1AuthRefreshPost(RefreshRequest refreshRequest) async {
+    chamadas++;
+    // um respiro para que as chamadas concorrentes se sobreponham de verdade
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    return TokenPair(
+      accessToken: 'novo-access',
+      refreshToken: 'novo-refresh',
+      expiresIn: 900,
+      tokenType: 'Bearer',
+    );
+  }
+}
+
+/// O Nó recusa: o refresh token também venceu (14 dias).
+class _AuthQueRecusa extends AuthApi {
+  @override
+  Future<TokenPair?> refreshApiV1AuthRefreshPost(RefreshRequest refreshRequest) async {
+    throw ApiException(401, 'refresh token inválido ou expirado');
+  }
 }
