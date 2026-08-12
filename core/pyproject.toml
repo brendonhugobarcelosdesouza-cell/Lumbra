@@ -116,6 +116,15 @@ packages = ["lumbra"]
 module = "tests.*"
 disallow_untyped_defs = false
 
+# O pgserver expõe `get_server` sem declarar reexportação, e o modo estrito
+# recusa. A permissão é dada ao PACOTE DELE, e não silenciada na nossa
+# chamada com um `type: ignore`: assim o rigor continua valendo para o nosso
+# código, e o dia em que a biblioteca declarar as exportações basta apagar
+# estas três linhas.
+[[tool.mypy.overrides]]
+module = "pgserver.*"
+implicit_reexport = true
+
 # ---------------------------------------------------------------- pytest
 [tool.pytest.ini_options]
 testpaths = ["tests"]
