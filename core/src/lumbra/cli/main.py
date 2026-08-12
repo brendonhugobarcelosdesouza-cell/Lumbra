@@ -21,10 +21,14 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from lumbra.cli import console
 from lumbra.diagnostics import checks
 from lumbra.shared.config import Settings, get_settings
+
+if TYPE_CHECKING:
+    from alembic.config import Config
 
 # core/src/lumbra/cli/main.py → parents[3] = core/ (onde vive o alembic.ini)
 CORE_RAIZ = Path(__file__).resolve().parents[3]
@@ -154,13 +158,37 @@ def _subir_servicos() -> bool:
     return resultado.returncode == 0
 
 
+def _config_alembic() -> Config:
+    """Alembic apontado para as migrações PELO PACOTE, não pelo repositório.
+
+    O ``script_location`` do ``alembic.ini`` é relativo, e o Alembic o
+    resolve contra o diretório ATUAL. Rodar ``lumbra up`` da raiz do
+    monorepo em vez de dentro de ``core/`` já bastava para quebrar:
+    "Path doesn't exist: src\\lumbra\\adapters\\persistence\\migrations".
+
+    Instalado seria pior: não existe ``core/`` nenhum, e o diretório atual é
+    a pasta de onde o atalho foi clicado. Perguntar ao próprio pacote onde
+    ele mora é a única forma que funciona nos dois casos.
+    """
+    from alembic.config import Config
+
+    from lumbra.adapters import persistence
+
+    # o .ini traz só preferências de log e vive no repositório; instalado,
+    # ele não existe, e isso não é motivo para não migrar
+    ini = CORE_RAIZ / "alembic.ini"
+    cfg = Config(str(ini)) if ini.exists() else Config()
+    migracoes = Path(persistence.__file__).resolve().parent / "migrations"
+    cfg.set_main_option("script_location", str(migracoes))
+    return cfg
+
+
 def _aplicar_migracoes() -> bool:
     console.linha("Aplicando migrações...")
     from alembic import command
-    from alembic.config import Config
 
     try:
-        command.upgrade(Config(str(CORE_RAIZ / "alembic.ini")), "head")
+        command.upgrade(_config_alembic(), "head")
     except Exception as exc:
         console.erro(f"falha ao migrar: {exc}")
         console.linha(

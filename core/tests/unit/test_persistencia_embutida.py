@@ -60,6 +60,23 @@ class TestPrepararBanco:
         assert servidor is None
 
 
+class TestOndeEstaoAsMigracoes:
+    def test_o_caminho_nao_depende_do_diretorio_atual(self, monkeypatch, tmp_path):
+        """`lumbra up` da raiz do monorepo falhava com "Path doesn't exist:
+        src\\lumbra\\adapters\\persistence\\migrations".
+
+        O ``script_location`` do alembic.ini é relativo e o Alembic o resolve
+        contra o diretório ATUAL. Instalado seria pior: não existe ``core/``,
+        e o diretório atual é a pasta de onde o atalho foi clicado.
+        """
+        from lumbra.cli.main import _config_alembic
+
+        monkeypatch.chdir(tmp_path)  # o pior caso: um diretório sem nada
+        destino = Path(_config_alembic().get_main_option("script_location") or "")
+        assert destino.is_absolute()
+        assert (destino / "versions").is_dir()
+
+
 class TestModoDeExecucao:
     """`com_banco` existe para que 'quem subiu o Postgres' não vaze."""
 
