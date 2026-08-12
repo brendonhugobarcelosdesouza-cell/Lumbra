@@ -131,11 +131,54 @@ class TestVerificacoesIndividuais:
         assert resultado.status is Status.WARN
         assert "reinícios" in resultado.summary
 
-    async def test_embutido_e_diagnosticado_como_banco_de_verdade(self):
+    async def test_no_modo_embutido_o_dsn_configurado_e_ignorado(self, monkeypatch):
+        """A pior falha até agora, e ela ELOGIOU o sistema.
+
+        Rodando `lumbra doctor` com LUMBRA_PERSISTENCE=embedded numa máquina
+        que também tinha o Postgres do Docker no ar, o diagnóstico conectou
+        no DSN padrão (localhost:5432), encontrou um banco saudável e disse
+        "tudo pronto para usar" — sobre um banco que o Nó não abriria naquele
+        modo. Diagnóstico que valida a coisa errada é pior que diagnóstico
+        nenhum: dá confiança falsa exatamente para quem foi conferir.
+
+        Aqui o DSN configurado aponta para um banco IMPOSSÍVEL. Se o
+        diagnóstico ainda o usar, o teste vê a porta 1 na tentativa.
+        """
+        vistos: list[str] = []
+
+        def _espiao(cfg, *, embutido):
+            vistos.append(f"embutido={embutido}")
+            return "postgresql+asyncpg://ninguem@127.0.0.1:1/nada", None
+
+        monkeypatch.setattr(
+            "lumbra.adapters.persistence.embedded.preparar_banco", _espiao, raising=True
+        )
+        await checks.check_postgres(
+            _settings(
+                persistence="embedded",
+                database=DatabaseSettings(
+                    dsn=SecretStr("postgresql+asyncpg://eu@127.0.0.1:5432/docker")
+                ),
+            )
+        )
+        assert vistos == ["embutido=True"]
+
+    async def test_embutido_e_diagnosticado_como_banco_de_verdade(self, monkeypatch):
         """A regressão que este teste tranca: no modo embedded o diagnóstico
         dizia "persistência em memória — nada é salvo", que é falso e
         assustador. Os três checks de banco comparavam com "postgres" e não
-        conheciam o modo novo."""
+        conheciam o modo novo.
+
+        O servidor embutido é substituído porque isto é teste de UNIDADE:
+        subir um PostgreSQL de verdade aqui trocaria milissegundos por
+        segundos em toda rodada. Quem sobe o servidor de verdade é
+        ``tests/integration/test_embedded_server.py``.
+        """
+        monkeypatch.setattr(
+            "lumbra.adapters.persistence.embedded.preparar_banco",
+            lambda cfg, *, embutido: ("postgresql+asyncpg://ninguem@127.0.0.1:1/nada", None),
+            raising=True,
+        )
         resultado = await checks.check_postgres(
             _settings(
                 persistence="embedded",

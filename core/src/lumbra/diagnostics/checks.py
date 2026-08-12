@@ -22,9 +22,14 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from pydantic import SecretStr
 
 from lumbra.shared.config import Settings
+
+if TYPE_CHECKING:
+    from lumbra.adapters.persistence.database import Database
 
 
 class Status(StrEnum):
@@ -89,7 +94,12 @@ async def check_dependencias(_settings: Settings) -> CheckResult:
     return CheckResult("dependencias", Status.OK, "todas as dependências importáveis")
 
 
-async def check_docker(_settings: Settings) -> CheckResult:
+async def check_docker(settings: Settings) -> CheckResult:
+    # No modo embutido o Docker não tem papel nenhum: avisar que ele falta
+    # seria mandar o usuário instalar justamente o que este modo existe para
+    # dispensar — e num aplicativo instalado a mensagem seria absurda.
+    if settings.persistence == "embedded":
+        return CheckResult("docker", Status.SKIP, "não é usado: o Nó sobe o próprio Postgres")
     binario = shutil.which("docker")
     if binario is None:
         return CheckResult(
@@ -196,10 +206,29 @@ async def check_permissoes(settings: Settings) -> CheckResult:
 # ---------------------------------------------------------------- serviços
 
 
+def _banco_do_no(settings: Settings) -> Database:
+    """O banco que o Nó REALMENTE usaria — não o que está configurado.
+
+    Encontrado rodando ``lumbra doctor`` com ``LUMBRA_PERSISTENCE=embedded``
+    numa máquina que também tinha o Postgres do Docker no ar: o diagnóstico
+    conectou no DSN padrão (localhost:5432), achou um banco saudável e
+    anunciou "tudo pronto para usar" — sobre um banco que o Nó não abriria
+    naquele modo. Um diagnóstico que valida a coisa errada é pior que
+    nenhum: ele dá confiança falsa exatamente quando a pessoa foi conferir.
+
+    Em modo embutido isto SOBE o servidor. É deliberado: no modo embutido a
+    pergunta "seu banco está bem?" e a pergunta "eu consigo subir seu
+    banco?" são a mesma pergunta, e só há uma forma honesta de responder.
+    """
+    from lumbra.adapters.persistence.database import Database
+    from lumbra.adapters.persistence.embedded import preparar_banco
+
+    dsn, _servidor = preparar_banco(settings.database, embutido=settings.persistence == "embedded")
+    return Database(settings.database.model_copy(update={"dsn": SecretStr(dsn)}))
+
+
 async def check_postgres(settings: Settings) -> CheckResult:
     from sqlalchemy import text
-
-    from lumbra.adapters.persistence.database import Database
 
     if not settings.com_banco:
         return CheckResult(
@@ -210,7 +239,7 @@ async def check_postgres(settings: Settings) -> CheckResult:
             fix="Defina LUMBRA_PERSISTENCE=embedded (o Nó sobe o próprio "
             "Postgres, sem Docker) ou =postgres apontando para um banco seu.",
         )
-    db = Database(settings.database)
+    db = _banco_do_no(settings)
     try:
         async with db.session() as sessao:
             versao = (await sessao.execute(text("SHOW server_version"))).scalar_one()
@@ -223,9 +252,14 @@ async def check_postgres(settings: Settings) -> CheckResult:
             Status.FAIL,
             "não foi possível conectar ao PostgreSQL",
             detail=f"{type(exc).__name__}: {exc}"[:300],
-            fix="Suba o banco com `lumbra dev` (usa Docker) ou confira "
-            "LUMBRA_DATABASE__DSN. O padrão é "
-            "postgresql+asyncpg://lumbra:lumbra@localhost:5432/lumbra",
+            fix=(
+                "O Postgres embutido não subiu. Confira permissão de escrita "
+                "na pasta de dados (LUMBRA_DATA_DIR muda o lugar)."
+                if settings.persistence == "embedded"
+                else "Suba o banco com `lumbra dev` (usa Docker) ou confira "
+                "LUMBRA_DATABASE__DSN. O padrão é "
+                "postgresql+asyncpg://lumbra:lumbra@localhost:5432/lumbra"
+            ),
         )
     finally:
         await db.dispose()
@@ -238,15 +272,20 @@ async def check_postgres(settings: Settings) -> CheckResult:
             fix="Use a imagem pgvector/pgvector do compose, ou rode "
             "`CREATE EXTENSION vector;` no banco.",
         )
+    # dizer QUAL banco não é enfeite: foi olhando a versão (16.14 do Docker
+    # onde devia estar a 16.2 embutida) que se descobriu o diagnóstico
+    # aprovando o banco errado. A origem no resumo torna o engano visível.
+    origem = "embutido (sem Docker)" if settings.persistence == "embedded" else "externo"
     return CheckResult(
-        "postgres", Status.OK, f"PostgreSQL {versao} com pgvector", data={"version": str(versao)}
+        "postgres",
+        Status.OK,
+        f"PostgreSQL {versao} com pgvector — {origem}",
+        data={"version": str(versao), "origem": origem},
     )
 
 
 async def check_migracoes(settings: Settings) -> CheckResult:
     from sqlalchemy import text
-
-    from lumbra.adapters.persistence.database import Database
 
     if not settings.com_banco:
         return CheckResult("migracoes", Status.SKIP, "sem banco relacional configurado")
@@ -261,7 +300,7 @@ async def check_migracoes(settings: Settings) -> CheckResult:
         ).glob("[0-9]*.py")
     )
     esperada = revisoes[-1] if revisoes else None
-    db = Database(settings.database)
+    db = _banco_do_no(settings)
     try:
         async with db.session() as sessao:
             atual = (
@@ -292,8 +331,6 @@ async def check_migracoes(settings: Settings) -> CheckResult:
 async def check_indices(settings: Settings) -> CheckResult:
     from sqlalchemy import text
 
-    from lumbra.adapters.persistence.database import Database
-
     if not settings.com_banco:
         return CheckResult("indices", Status.SKIP, "sem banco relacional configurado")
     esperados = {
@@ -302,7 +339,7 @@ async def check_indices(settings: Settings) -> CheckResult:
         "ix_memory_items_embedding": "vetorial de memórias",
         "ix_memory_items_tsv": "lexical de memórias",
     }
-    db = Database(settings.database)
+    db = _banco_do_no(settings)
     try:
         async with db.session() as sessao:
             existentes = {

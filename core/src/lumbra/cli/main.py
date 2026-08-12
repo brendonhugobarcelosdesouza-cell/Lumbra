@@ -215,7 +215,12 @@ def comando_up(args: argparse.Namespace) -> int:
     quebrado — em produção, falhar cedo é melhor que servir errado."""
     console.titulo("Lumbra — modo produção local")
     os.environ.setdefault("LUMBRA_ENVIRONMENT", "production")
-    os.environ.setdefault("LUMBRA_PERSISTENCE", "postgres")
+    # 'embedded' por padrão porque `up` é o Nó como PRODUTO: é o que o
+    # instalador vai chamar, na máquina de alguém que não tem Docker e não
+    # deveria precisar ter. Quem prefere um banco próprio define
+    # LUMBRA_PERSISTENCE=postgres. `lumbra dev` segue no compose — lá o
+    # Docker é ferramenta de trabalho, não requisito imposto ao usuário.
+    os.environ.setdefault("LUMBRA_PERSISTENCE", "embedded")
     _subir_servicos()
     if not _aplicar_migracoes():
         return 1
