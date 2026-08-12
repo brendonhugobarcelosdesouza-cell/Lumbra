@@ -97,9 +97,17 @@ def preparar_banco(
         return settings.dsn.get_secret_value(), None
     from lumbra.shared.paths import pasta_do_banco
 
-    pasta = Path(settings.embedded_dir) if settings.embedded_dir else pasta_do_banco()
-    servidor = ServidorEmbutido(pasta)
+    pasta = (Path(settings.embedded_dir) if settings.embedded_dir else pasta_do_banco()).resolve()
+    # Um servidor por pasta POR PROCESSO. Sem isto, o `lumbra up` anunciava
+    # "postgres embutido no ar" quatro vezes seguidas — uma por chamador — e
+    # três delas eram mentira: o servidor já estava de pé. Log repetido não
+    # é só feio; ensina o leitor a ignorar a linha que importa.
+    servidor = _servidores.get(pasta) or ServidorEmbutido(pasta)
+    _servidores[pasta] = servidor
     return servidor.dsn, servidor
+
+
+_servidores: dict[Path, ServidorEmbutido] = {}
 
 
 # canário anti-truncamento

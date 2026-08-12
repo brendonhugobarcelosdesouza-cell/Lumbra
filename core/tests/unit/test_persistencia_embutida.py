@@ -77,6 +77,38 @@ class TestOndeEstaoAsMigracoes:
         assert (destino / "versions").is_dir()
 
 
+class TestSegredoDaInstalacao:
+    """ADR-070: cada instalação tem a própria chave de assinatura."""
+
+    def test_a_chave_e_criada_uma_vez_e_reusada(self, monkeypatch, tmp_path):
+        """Gerar uma chave nova a cada partida deslogaria o usuário toda vez
+        que ele abrisse a Lumbra — sem nenhuma pista do porquê."""
+        from lumbra.shared.segredo_local import segredo_desta_instalacao
+
+        monkeypatch.setenv("LUMBRA_DATA_DIR", str(tmp_path))
+        primeira = segredo_desta_instalacao()
+        assert primeira == segredo_desta_instalacao()
+
+    def test_duas_instalacoes_nao_compartilham_chave(self, monkeypatch, tmp_path):
+        """O motivo de não afrouxar a checagem: uma chave conhecida em toda
+        instalação é pior que não ter autenticação, porque parece que tem."""
+        from lumbra.shared.segredo_local import segredo_desta_instalacao
+
+        monkeypatch.setenv("LUMBRA_DATA_DIR", str(tmp_path / "a"))
+        uma = segredo_desta_instalacao()
+        monkeypatch.setenv("LUMBRA_DATA_DIR", str(tmp_path / "b"))
+        outra = segredo_desta_instalacao()
+        assert uma != outra
+
+    def test_a_chave_nao_e_a_de_desenvolvimento(self, monkeypatch, tmp_path):
+        from lumbra.shared.segredo_local import segredo_desta_instalacao
+
+        monkeypatch.setenv("LUMBRA_DATA_DIR", str(tmp_path))
+        gerada = segredo_desta_instalacao()
+        assert "dev-only-insecure" not in gerada
+        assert len(gerada) >= 32  # RFC 7518 para HS256
+
+
 class TestModoDeExecucao:
     """`com_banco` existe para que 'quem subiu o Postgres' não vaze."""
 

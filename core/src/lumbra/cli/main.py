@@ -139,6 +139,23 @@ def _preparar_embutido() -> bool:
     return True
 
 
+def _garantir_segredo_local() -> None:
+    """Dá a esta instalação uma chave só dela (ADR-070).
+
+    Só entra quando o usuário não definiu a sua: quem administra um servidor
+    continua mandando na configuração. E não toca em ``lumbra dev`` — lá o
+    segredo de desenvolvimento é conhecido de propósito, e trocá-lo por um
+    aleatório derrubaria a sessão a cada máquina nova sem ganho nenhum.
+    """
+    from lumbra.shared.segredo_local import caminho_do_segredo, segredo_desta_instalacao
+
+    if os.environ.get("LUMBRA_SECURITY__JWT_SECRET"):
+        return
+    os.environ["LUMBRA_SECURITY__JWT_SECRET"] = segredo_desta_instalacao()
+    get_settings.cache_clear()
+    console.linha(console.cor(f"  chave desta instalação em {caminho_do_segredo()}", "azul"))
+
+
 def _subir_servicos() -> bool:
     if _preparar_embutido():
         return True
@@ -249,6 +266,7 @@ def comando_up(args: argparse.Namespace) -> int:
     # LUMBRA_PERSISTENCE=postgres. `lumbra dev` segue no compose — lá o
     # Docker é ferramenta de trabalho, não requisito imposto ao usuário.
     os.environ.setdefault("LUMBRA_PERSISTENCE", "embedded")
+    _garantir_segredo_local()
     _subir_servicos()
     if not _aplicar_migracoes():
         return 1
