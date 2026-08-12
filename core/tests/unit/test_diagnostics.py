@@ -190,6 +190,32 @@ class TestVerificacoesIndividuais:
         assert resultado.status is Status.FAIL  # tentou conectar, não deu de ombros
         assert "memória" not in resultado.summary
 
+    async def test_no_modo_embutido_nenhuma_instrucao_manda_usar_docker(self, monkeypatch):
+        """O modo embutido existe para dispensar o Docker. Uma instrução que
+        mande instalá-lo desfaz a promessa no pior momento — quando a pessoa
+        já está com um problema e foi buscar ajuda.
+
+        Foi o que aconteceu no primeiro `lumbra doctor` embutido: banco novo,
+        ainda sem migrar, e o conserto oferecido era "use a imagem
+        pgvector/pgvector do compose".
+        """
+        monkeypatch.setattr(
+            "lumbra.adapters.persistence.embedded.preparar_banco",
+            lambda cfg, *, embutido: ("postgresql+asyncpg://ninguem@127.0.0.1:1/nada", None),
+            raising=True,
+        )
+        cfg = _settings(persistence="embedded")
+        resultados = [
+            await checks.check_docker(cfg),
+            await checks.check_postgres(cfg),
+            await checks.check_migracoes(cfg),
+            await checks.check_indices(cfg),
+        ]
+        for resultado in resultados:
+            texto = f"{resultado.fix or ''} {resultado.detail or ''}".lower()
+            assert "docker" not in texto, f"{resultado.name} manda usar Docker: {resultado.fix}"
+            assert "compose" not in texto, f"{resultado.name} manda usar compose: {resultado.fix}"
+
     async def test_banco_inacessivel_explica_o_que_fazer(self):
         resultado = await checks.check_postgres(
             _settings(

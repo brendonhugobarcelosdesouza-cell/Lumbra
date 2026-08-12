@@ -227,6 +227,17 @@ def _banco_do_no(settings: Settings) -> Database:
     return Database(settings.database.model_copy(update={"dsn": SecretStr(dsn)}))
 
 
+def _comando_que_prepara(settings: Settings) -> str:
+    """Qual comando conserta um banco não preparado, NESTE modo.
+
+    Um diagnóstico que manda rodar o comando errado é pior que um silencioso:
+    o modo embutido devolvia "use a imagem pgvector/pgvector do compose",
+    isto é, mandava instalar Docker — exatamente o que este modo existe para
+    dispensar. A instrução tem que saber em que modo estamos.
+    """
+    return "`lumbra up`" if settings.persistence == "embedded" else "`lumbra dev`"
+
+
 async def check_postgres(settings: Settings) -> CheckResult:
     from sqlalchemy import text
 
@@ -264,13 +275,28 @@ async def check_postgres(settings: Settings) -> CheckResult:
     finally:
         await db.dispose()
     if vetor is None:
+        # No modo embutido isto quase nunca é "faltou a extensão": é banco
+        # recém-criado. Quem instala o pgvector é a migração 0001, e mandar
+        # o usuário rodar CREATE EXTENSION à mão seria pedir que ele faça o
+        # trabalho que o `lumbra up` faz sozinho — num banco que a Lumbra
+        # acabou de criar para ele.
+        embutido = settings.persistence == "embedded"
         return CheckResult(
             "postgres",
             Status.FAIL,
             f"PostgreSQL {versao} conectado, mas sem a extensão pgvector",
-            detail="Sem pgvector não há busca semântica — só busca por palavra.",
-            fix="Use a imagem pgvector/pgvector do compose, ou rode "
-            "`CREATE EXTENSION vector;` no banco.",
+            detail=(
+                "Banco recém-criado: a extensão é instalada junto com as migrações."
+                if embutido
+                else "Sem pgvector não há busca semântica — só busca por palavra."
+            ),
+            fix=(
+                f"Rode {_comando_que_prepara(settings)} — ele aplica as migrações, "
+                "que criam a extensão."
+                if embutido
+                else "Use a imagem pgvector/pgvector do compose, ou rode "
+                "`CREATE EXTENSION vector;` no banco."
+            ),
         )
     # dizer QUAL banco não é enfeite: foi olhando a versão (16.14 do Docker
     # onde devia estar a 16.2 embutida) que se descobriu o diagnóstico
@@ -315,7 +341,8 @@ async def check_migracoes(settings: Settings) -> CheckResult:
             "migracoes",
             Status.FAIL,
             "banco sem migrações aplicadas",
-            fix="Rode `alembic upgrade head` (ou `lumbra dev`, que já faz isso).",
+            fix=f"Rode {_comando_que_prepara(settings)} — ele migra sozinho "
+            "(ou `alembic upgrade head`, se preferir na mão).",
         )
     if esperada is not None and atual != esperada:
         return CheckResult(
@@ -323,7 +350,8 @@ async def check_migracoes(settings: Settings) -> CheckResult:
             Status.FAIL,
             f"banco na revisão {atual}, código espera {esperada}",
             detail="Tabelas ou colunas novas podem estar faltando.",
-            fix="Rode `alembic upgrade head`.",
+            fix=f"Rode {_comando_que_prepara(settings)} — ele migra sozinho "
+            "(ou `alembic upgrade head`, se preferir na mão).",
         )
     return CheckResult("migracoes", Status.OK, f"esquema atualizado (revisão {atual})")
 
@@ -363,7 +391,7 @@ async def check_indices(settings: Settings) -> CheckResult:
             Status.WARN,
             f"faltam índices: {', '.join(faltando.values())}",
             detail="A busca continua funcionando, mas fica lenta conforme a base cresce.",
-            fix="Rode `alembic upgrade head` para recriar os índices.",
+            fix=f"Rode {_comando_que_prepara(settings)} para recriar os índices.",
         )
     return CheckResult("indices", Status.OK, "índices vetoriais (HNSW) e lexicais (GIN) presentes")
 
