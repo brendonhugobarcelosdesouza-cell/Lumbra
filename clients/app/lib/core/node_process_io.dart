@@ -5,10 +5,17 @@ import 'package:flutter/foundation.dart';
 
 import 'node_process.dart';
 
-/// `--no-reload` de propósito: com recarga automática o Nó vira uma ÁRVORE de
-/// processos, e matar o pai deixaria o filho vivo segurando a porta. Recarga
-/// é ferramenta de quem edita o Core, não de quem usa o app.
-const _argumentos = ['dev', '--no-reload'];
+/// `up`, não `dev`: `up` é o Nó como PRODUTO — Postgres embutido sem Docker,
+/// chave de assinatura própria, sem recarga automática (ADR-069/070). Enquanto
+/// isto dizia `dev`, o caminho que o usuário percorre ignorava tudo isso e
+/// exigia Docker sem avisar.
+///
+/// `--seguir-a-entrada` é o que permite desligar o Nó sem matá-lo: fechamos o
+/// `stdin` dele, ele vê o fim da entrada e encerra sozinho. No Windows não há
+/// sinal para mandar — `kill` vira `TerminateProcess` — e o preço já foi
+/// cobrado: o Postgres embutido levou um tiro no meio de um COMMIT e o banco
+/// ficou precisando de recuperação (correção ao ADR-069).
+const argumentosDoNo = ['up', '--seguir-a-entrada'];
 
 /// Sobe o Nó como processo filho no desktop (ADR-046).
 ///
@@ -75,16 +82,33 @@ class GerenteDoNoDesktop implements GerenteDoNo {
     final processo = _processo;
     if (processo == null) return; // não somos donos: não encostamos
     _processo = null;
-    processo.kill();
-    // dá um tempo para encerrar com dignidade antes de desistir
-    await processo.exitCode.timeout(
-      const Duration(seconds: 5),
-      onTimeout: () {
-        processo.kill(ProcessSignal.sigkill);
-        return -1;
-      },
+
+    // PEDIR antes de MANDAR. Fechar a entrada padrão é o único canal que
+    // funciona nos dois sistemas: no Windows não existe sinal para enviar, e
+    // `kill` vira TerminateProcess — foi assim que o Postgres embutido levou
+    // um tiro no meio de um COMMIT e o banco precisou de recuperação.
+    try {
+      await processo.stdin.close();
+    } catch (_) {
+      // entrada já fechada: seguimos para a espera do mesmo jeito
+    }
+
+    // 20 segundos porque desligar o Postgres embutido com checkpoint leva
+    // alguns; desistir cedo demais recriaria exatamente o problema que este
+    // código existe para evitar.
+    final codigo = await processo.exitCode.timeout(
+      const Duration(seconds: 20),
+      onTimeout: () => _tempoEsgotado,
     );
+    if (codigo == _tempoEsgotado) {
+      debugPrint('[Nó] não encerrou sozinho em 20s — encerrando à força');
+      processo.kill(ProcessSignal.sigkill);
+      await processo.exitCode;
+    }
   }
+
+  /// Sentinela: nenhum código de saída real é este.
+  static const _tempoEsgotado = -999;
 
   static void _registrar(List<int> bytes) {
     if (!kDebugMode) return;
@@ -97,7 +121,7 @@ class GerenteDoNoDesktop implements GerenteDoNo {
     //    instalado noutro lugar, ou para um script de depuração).
     const definido = String.fromEnvironment('LUMBRA_NODE_EXE');
     if (definido.isNotEmpty && File(definido).existsSync()) {
-      return const _Comando(definido, _argumentos, null);
+      return const _Comando(definido, argumentosDoNo, null);
     }
 
     // 2. Ao lado do app — o que o instalador vai produzir (ADR-046).
@@ -105,7 +129,7 @@ class GerenteDoNoDesktop implements GerenteDoNo {
       '${File(Platform.resolvedExecutable).parent.path}'
       '${Platform.pathSeparator}no${Platform.pathSeparator}$_nomeDoExecutavel',
     );
-    if (aoLado.existsSync()) return _Comando(aoLado.path, _argumentos, null);
+    if (aoLado.existsSync()) return _Comando(aoLado.path, argumentosDoNo, null);
 
     // 3. Desenvolvimento: sobe do diretório atual procurando o venv do
     //    repositório. Não fixamos caminho de máquina nenhuma.
@@ -120,7 +144,7 @@ class GerenteDoNoDesktop implements GerenteDoNo {
         final core = Directory('${dir.path}${Platform.pathSeparator}core');
         return _Comando(
           candidato.path,
-          _argumentos,
+          argumentosDoNo,
           core.existsSync() ? core.path : dir.path,
         );
       }

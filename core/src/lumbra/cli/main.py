@@ -20,8 +20,9 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from lumbra.cli import console
 from lumbra.diagnostics import checks
@@ -249,7 +250,41 @@ def _aplicar_migracoes() -> bool:
     return True
 
 
-def _servir(*, reload: bool, host: str, porta: int) -> int:
+def _vigiar_a_entrada(servidor: Any) -> None:
+    """Encerra o Nó com dignidade quando quem o iniciou vai embora.
+
+    O app desktop não tem como mandar um sinal para o Nó no Windows: o
+    ``Process.kill`` do Dart vira ``TerminateProcess``, que não avisa
+    ninguém. E o preço disso foi cobrado — o Postgres embutido levou um tiro
+    no meio de um ``COMMIT`` e o cluster ficou precisando de recuperação
+    (correção ao ADR-069).
+
+    O canal que existe nos dois sistemas é a entrada padrão: quando o app
+    fecha o ``stdin`` do filho, ou quando o app MORRE, o cano fecha e a
+    leitura devolve EOF. Aí pedimos ao uvicorn uma parada limpa, o
+    interpretador termina normalmente e o ``atexit`` do ``pgserver``
+    desliga o banco como se deve.
+
+    A propriedade que mais vale é a segunda: isto também protege do app
+    fechar de forma abrupta, que é o caso que nenhum "fechar bonitinho"
+    cobre.
+    """
+    try:
+        for _ in sys.stdin:
+            pass  # qualquer coisa que chegue é ignorada: só o FIM interessa
+    except Exception as exc:
+        # entrada fechada de forma estranha também é fim — e é o caso mais
+        # importante: significa que quem nos iniciou morreu de repente
+        _log_cli(f"entrada interrompida ({type(exc).__name__})")
+    _log_cli("entrada encerrada — parando o Nó")
+    servidor.should_exit = True
+
+
+def _log_cli(mensagem: str) -> None:
+    console.linha(console.cor(f"[Nó] {mensagem}", "cinza"))
+
+
+def _servir(*, reload: bool, host: str, porta: int, seguir_a_entrada: bool = False) -> int:
     import uvicorn
 
     console.linha(
@@ -260,14 +295,32 @@ def _servir(*, reload: bool, host: str, porta: int) -> int:
             "verde",
         )
     )
-    uvicorn.run(
-        "lumbra.api.main:create_default_app",
-        factory=True,
-        host=host,
-        port=porta,
-        reload=reload,
-        log_level="info",
+    if reload:
+        # com recarga automática quem manda é o supervisor do uvicorn, e não
+        # há um `Server` para pedir que pare. É por isso que o sidecar usa
+        # `--no-reload`: recarga é ferramenta de quem edita o Core.
+        uvicorn.run(
+            "lumbra.api.main:create_default_app",
+            factory=True,
+            host=host,
+            port=porta,
+            reload=True,
+            log_level="info",
+        )
+        return 0
+
+    servidor = uvicorn.Server(
+        uvicorn.Config(
+            "lumbra.api.main:create_default_app",
+            factory=True,
+            host=host,
+            port=porta,
+            log_level="info",
+        )
     )
+    if seguir_a_entrada:
+        threading.Thread(target=_vigiar_a_entrada, args=(servidor,), daemon=True).start()
+    servidor.run()
     return 0
 
 
@@ -287,9 +340,22 @@ def comando_dev(args: argparse.Namespace) -> int:
     return _servir(reload=not args.no_reload, host=args.host, porta=args.port)
 
 
+# O que impede SERVIR — e não o que estraga uma funcionalidade.
+#
+# Antes, qualquer FALHA barrava o `lumbra up`, e isso funcionava enquanto o
+# comando era coisa de quem administra um servidor. Como caminho do produto,
+# vira absurdo: sem o Ollama instalado, a Lumbra inteira não abriria — nem
+# documentos, nem memória, nem busca, que não dependem de modelo de conversa
+# nenhum. "Falhar cedo" vale para o que compromete os DADOS; para o resto, o
+# certo é abrir avisando o que ficou de fora.
+IMPEDEM_SUBIR = frozenset(
+    {"python", "dependencias", "configuracao", "permissoes", "postgres", "migracoes"}
+)
+
+
 def comando_up(args: argparse.Namespace) -> int:
-    """Produção local: sem recarga automática e SEM subir se algo estiver
-    quebrado — em produção, falhar cedo é melhor que servir errado."""
+    """Produção local: sem recarga automática, e sem subir se o que falta
+    comprometer os dados. O que só tira uma funcionalidade vira aviso."""
     console.titulo("Lumbra — modo produção local")
     _padrao("LUMBRA_ENVIRONMENT", "production")
     # 'embedded' por padrão porque `up` é o Nó como PRODUTO: é o que o
@@ -303,13 +369,20 @@ def comando_up(args: argparse.Namespace) -> int:
     if not _aplicar_migracoes():
         return 1
     resultados = asyncio.run(checks.executar(_settings()))
-    problemas = [r for r in resultados if r.status is checks.Status.FAIL]
-    if problemas:
+    falhas = [r for r in resultados if r.status is checks.Status.FAIL]
+    impedem = [r for r in falhas if r.name in IMPEDEM_SUBIR]
+    if impedem:
         console.linha(console.cor("Não vou subir com problemas pendentes:", "vermelho"))
-        for problema in problemas:
+        for problema in impedem:
             _imprimir_resultado(problema)
         return 1
-    return _servir(reload=False, host=args.host, porta=args.port)
+    for degradado in falhas:
+        console.linha(console.cor(f"Sem {degradado.name}: {degradado.summary}", "amarelo"))
+        if degradado.fix:
+            console.linha(console.cor(f"  como corrigir: {degradado.fix}", "azul"))
+    return _servir(
+        reload=False, host=args.host, porta=args.port, seguir_a_entrada=args.seguir_a_entrada
+    )
 
 
 # ---------------------------------------------------------------- version
@@ -355,6 +428,13 @@ def construir_parser() -> argparse.ArgumentParser:
     up = sub.add_parser("up", help="sobe em modo produção local")
     up.add_argument("--host", default="127.0.0.1")
     up.add_argument("--port", type=int, default=8000)
+    up.add_argument(
+        "--seguir-a-entrada",
+        dest="seguir_a_entrada",
+        action="store_true",
+        help="encerra quando a entrada padrão fechar (o app usa isto para "
+        "desligar o Nó sem matá-lo à força)",
+    )
     up.set_defaults(func=comando_up)
 
     init = sub.add_parser("init", help="assistente de primeira execução")

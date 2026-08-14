@@ -2,6 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumbra_api/api.dart';
 import 'package:lumbra_app/core/node_process.dart';
+// o comando é um CONTRATO entre o app e a CLI: se um lado mudar sozinho, o
+// sintoma aparece só na máquina do usuário
+import 'package:lumbra_app/core/node_process_io.dart';
 // direto do stub: em `node_process.dart` a importação é CONDICIONAL, então no
 // desktop (onde os testes rodam) quem entra é a implementação de processo real
 import 'package:lumbra_app/core/node_process_stub.dart';
@@ -78,6 +81,22 @@ void main() {
     await _montar(tester, _GerenteFalso(), NodeState.noAr);
     await tester.pumpAndSettle();
     expect(find.text('Iniciando o Nó…'), findsNothing);
+  });
+
+  group('o comando que o app dá ao Nó', () {
+    test('é `up`, o Nó como produto — não `dev`', () {
+      // Enquanto isto dizia `dev`, o caminho que o usuário percorre ignorava
+      // o Postgres embutido e a chave própria: o app exigia Docker sem
+      // avisar, enquanto o `lumbra up` no terminal funcionava sem ele.
+      expect(argumentosDoNo.first, 'up');
+    });
+
+    test('pede para o Nó seguir a entrada padrão', () {
+      // é o que permite desligar sem matar: fechamos o stdin dele e ele
+      // encerra sozinho. Sem isto, no Windows só resta TerminateProcess —
+      // que já pegou o Postgres embutido no meio de um COMMIT.
+      expect(argumentosDoNo, contains('--seguir-a-entrada'));
+    });
   });
 
   group('gerente indisponível (Web e Android)', () {
