@@ -47,6 +47,43 @@ def traduzir_uri(uri: str) -> str:
     return uri.replace("postgresql://", "postgresql+asyncpg://")
 
 
+def pasta_do_banco_de(settings: DatabaseSettings) -> Path:
+    """Onde mora o banco embutido, segundo esta configuração."""
+    from lumbra.shared.paths import pasta_do_banco
+
+    return (Path(settings.embedded_dir) if settings.embedded_dir else pasta_do_banco()).resolve()
+
+
+def dsn_se_estiver_no_ar(pasta: Path) -> str | None:
+    """O DSN do servidor JÁ rodando nesta pasta, ou ``None``. Nunca inicia.
+
+    Existe porque diagnosticar não pode ser um ato destrutivo. O
+    ``lumbra doctor`` chegou a SUBIR o Postgres para responder "seu banco
+    está bem?", e a ideia parecia elegante até encontrar um cluster
+    precisando de recuperação: cada execução do diagnóstico disparava mais
+    uma partida, o ``pg_ctl`` desistia aos 10 segundos (limite fixo da
+    biblioteca) enquanto a recuperação do Postgres pedia 30, e o ciclo não
+    tinha como terminar. O diagnóstico virou parte do problema que fora
+    chamado para explicar.
+
+    Ferramenta de diagnóstico observa. Quem age é ``lumbra up``.
+    """
+    try:
+        from pgserver.postgres_server import PostmasterInfo
+    except ImportError:  # pragma: no cover - depende do ambiente
+        return None
+    if not pasta.exists():
+        return None
+    try:
+        info = PostmasterInfo.read_from_pgdata(pasta)
+        if info is None or not info.is_running() or info.status != "ready":
+            return None
+        return traduzir_uri(info.get_uri())
+    except Exception as exc:  # ler estado alheio nunca pode derrubar o doctor
+        _log.warning("postmaster_ilegivel", pasta=str(pasta), erro=repr(exc))
+        return None
+
+
 class ServidorEmbutido:
     """O Postgres do Nó. Um por pasta de dados.
 
@@ -95,9 +132,8 @@ def preparar_banco(
     """
     if not embutido:
         return settings.dsn.get_secret_value(), None
-    from lumbra.shared.paths import pasta_do_banco
 
-    pasta = (Path(settings.embedded_dir) if settings.embedded_dir else pasta_do_banco()).resolve()
+    pasta = pasta_do_banco_de(settings)
     # Um servidor por pasta POR PROCESSO. Sem isto, o `lumbra up` anunciava
     # "postgres embutido no ar" quatro vezes seguidas — uma por chamador — e
     # três delas eram mentira: o servidor já estava de pé. Log repetido não

@@ -206,6 +206,35 @@ async def check_permissoes(settings: Settings) -> CheckResult:
 # ---------------------------------------------------------------- serviços
 
 
+class NoDesligadoError(Exception):
+    """O banco embutido existe, mas ninguém o subiu. Não é falha: é estado."""
+
+
+def _no_desligado(nome: str, settings: Settings) -> CheckResult:
+    """AVISO, não FALHA: o Nó desligado é a situação normal antes de abrir.
+
+    Reprovar aqui faria o ``doctor`` gritar "3 problemas impedem o
+    funcionamento" numa instalação perfeitamente sadia que só não estava
+    rodando — e o usuário aprenderia a desconfiar do diagnóstico inteiro.
+    """
+    return CheckResult(
+        nome,
+        Status.WARN,
+        "o Nó não está rodando — nada a verificar no banco embutido",
+        detail=(
+            "O Postgres embutido só existe enquanto o Nó vive "
+            f"({pasta_do_banco_embutido(settings)})."
+        ),
+        fix=f"Suba com {_comando_que_prepara(settings)} e rode o diagnóstico de novo.",
+    )
+
+
+def pasta_do_banco_embutido(settings: Settings) -> str:
+    from lumbra.adapters.persistence.embedded import pasta_do_banco_de
+
+    return str(pasta_do_banco_de(settings.database))
+
+
 def _banco_do_no(settings: Settings) -> Database:
     """O banco que o Nó REALMENTE usaria — não o que está configurado.
 
@@ -216,14 +245,27 @@ def _banco_do_no(settings: Settings) -> Database:
     naquele modo. Um diagnóstico que valida a coisa errada é pior que
     nenhum: ele dá confiança falsa exatamente quando a pessoa foi conferir.
 
-    Em modo embutido isto SOBE o servidor. É deliberado: no modo embutido a
-    pergunta "seu banco está bem?" e a pergunta "eu consigo subir seu
-    banco?" são a mesma pergunta, e só há uma forma honesta de responder.
+    Eu resolvi aquilo fazendo o diagnóstico SUBIR o servidor, argumentando
+    que "seu banco está bem?" e "eu consigo subir seu banco?" seriam a mesma
+    pergunta. Não são — e a diferença apareceu do jeito caro. Diante de um
+    cluster precisando de recuperação, cada execução do ``doctor`` disparava
+    mais uma partida; o ``pg_ctl`` desiste aos 10 segundos (limite fixo da
+    biblioteca) enquanto a recuperação do Postgres pedia 30. O ciclo não
+    tinha como fechar, e a ferramenta chamada para explicar o problema
+    passou a alimentá-lo.
+
+    Diagnóstico observa. Quem age é ``lumbra up``.
     """
     from lumbra.adapters.persistence.database import Database
-    from lumbra.adapters.persistence.embedded import preparar_banco
+    from lumbra.adapters.persistence.embedded import dsn_se_estiver_no_ar, pasta_do_banco_de
 
-    dsn, _servidor = preparar_banco(settings.database, embutido=settings.persistence == "embedded")
+    if settings.persistence == "embedded":
+        no_ar = dsn_se_estiver_no_ar(pasta_do_banco_de(settings.database))
+        if no_ar is None:
+            raise NoDesligadoError
+        dsn = no_ar
+    else:
+        dsn = settings.database.dsn.get_secret_value()
     return Database(settings.database.model_copy(update={"dsn": SecretStr(dsn)}))
 
 
@@ -250,7 +292,10 @@ async def check_postgres(settings: Settings) -> CheckResult:
             fix="Defina LUMBRA_PERSISTENCE=embedded (o Nó sobe o próprio "
             "Postgres, sem Docker) ou =postgres apontando para um banco seu.",
         )
-    db = _banco_do_no(settings)
+    try:
+        db = _banco_do_no(settings)
+    except NoDesligadoError:
+        return _no_desligado("postgres", settings)
     try:
         async with db.session() as sessao:
             versao = (await sessao.execute(text("SHOW server_version"))).scalar_one()
@@ -326,7 +371,10 @@ async def check_migracoes(settings: Settings) -> CheckResult:
         ).glob("[0-9]*.py")
     )
     esperada = revisoes[-1] if revisoes else None
-    db = _banco_do_no(settings)
+    try:
+        db = _banco_do_no(settings)
+    except NoDesligadoError:
+        return _no_desligado("migracoes", settings)
     try:
         async with db.session() as sessao:
             atual = (
@@ -367,7 +415,10 @@ async def check_indices(settings: Settings) -> CheckResult:
         "ix_memory_items_embedding": "vetorial de memórias",
         "ix_memory_items_tsv": "lexical de memórias",
     }
-    db = _banco_do_no(settings)
+    try:
+        db = _banco_do_no(settings)
+    except NoDesligadoError:
+        return _no_desligado("indices", settings)
     try:
         async with db.session() as sessao:
             existentes = {

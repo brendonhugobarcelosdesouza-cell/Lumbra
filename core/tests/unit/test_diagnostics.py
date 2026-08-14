@@ -131,6 +131,42 @@ class TestVerificacoesIndividuais:
         assert resultado.status is Status.WARN
         assert "reinícios" in resultado.summary
 
+    async def test_no_desligado_e_aviso_e_o_doctor_nao_sobe_nada(self, monkeypatch, tmp_path):
+        """A lição mais cara do dia.
+
+        Eu tinha feito o diagnóstico SUBIR o Postgres embutido, argumentando
+        que "seu banco está bem?" e "eu consigo subir seu banco?" eram a
+        mesma pergunta. Diante de um cluster precisando de recuperação, cada
+        `lumbra doctor` disparava outra partida: o pg_ctl desiste aos 10
+        segundos e a recuperação pedia 30. O ciclo não fechava, e a
+        ferramenta chamada para explicar o problema passou a alimentá-lo.
+
+        Duas invariantes agora: diagnosticar NÃO inicia processo, e Nó
+        desligado é AVISO — reprovar faria o doctor gritar "problemas
+        impedem o funcionamento" sobre uma instalação sadia que só não
+        estava rodando.
+        """
+        from lumbra.adapters.persistence import embedded
+
+        def _proibido(*a, **k):
+            raise AssertionError("o diagnóstico tentou INICIAR o servidor")
+
+        monkeypatch.setattr(embedded, "ServidorEmbutido", _proibido, raising=True)
+        monkeypatch.setattr(embedded, "preparar_banco", _proibido, raising=True)
+
+        cfg = _settings(
+            persistence="embedded",
+            database=DatabaseSettings(embedded_dir=str(tmp_path / "nunca-existiu")),
+        )
+        for resultado in (
+            await checks.check_postgres(cfg),
+            await checks.check_migracoes(cfg),
+            await checks.check_indices(cfg),
+        ):
+            assert resultado.status is Status.WARN, resultado.summary
+            assert "não está rodando" in resultado.summary
+            assert "lumbra up" in (resultado.fix or "")
+
     async def test_no_modo_embutido_o_dsn_configurado_e_ignorado(self, monkeypatch):
         """A pior falha até agora, e ela ELOGIOU o sistema.
 
@@ -146,12 +182,12 @@ class TestVerificacoesIndividuais:
         """
         vistos: list[str] = []
 
-        def _espiao(cfg, *, embutido):
-            vistos.append(f"embutido={embutido}")
-            return "postgresql+asyncpg://ninguem@127.0.0.1:1/nada", None
+        def _espiao(pasta):
+            vistos.append(str(pasta))
+            return "postgresql+asyncpg://ninguem@127.0.0.1:1/nada"
 
         monkeypatch.setattr(
-            "lumbra.adapters.persistence.embedded.preparar_banco", _espiao, raising=True
+            "lumbra.adapters.persistence.embedded.dsn_se_estiver_no_ar", _espiao, raising=True
         )
         await checks.check_postgres(
             _settings(
@@ -161,7 +197,8 @@ class TestVerificacoesIndividuais:
                 ),
             )
         )
-        assert vistos == ["embutido=True"]
+        assert len(vistos) == 1, "o diagnóstico tem que perguntar ao banco EMBUTIDO"
+        assert "5432" not in vistos[0]  # nada de localhost do Docker
 
     async def test_embutido_e_diagnosticado_como_banco_de_verdade(self, monkeypatch):
         """A regressão que este teste tranca: no modo embedded o diagnóstico
@@ -175,8 +212,8 @@ class TestVerificacoesIndividuais:
         ``tests/integration/test_embedded_server.py``.
         """
         monkeypatch.setattr(
-            "lumbra.adapters.persistence.embedded.preparar_banco",
-            lambda cfg, *, embutido: ("postgresql+asyncpg://ninguem@127.0.0.1:1/nada", None),
+            "lumbra.adapters.persistence.embedded.dsn_se_estiver_no_ar",
+            lambda pasta: "postgresql+asyncpg://ninguem@127.0.0.1:1/nada",
             raising=True,
         )
         resultado = await checks.check_postgres(
@@ -200,8 +237,8 @@ class TestVerificacoesIndividuais:
         pgvector/pgvector do compose".
         """
         monkeypatch.setattr(
-            "lumbra.adapters.persistence.embedded.preparar_banco",
-            lambda cfg, *, embutido: ("postgresql+asyncpg://ninguem@127.0.0.1:1/nada", None),
+            "lumbra.adapters.persistence.embedded.dsn_se_estiver_no_ar",
+            lambda pasta: "postgresql+asyncpg://ninguem@127.0.0.1:1/nada",
             raising=True,
         )
         cfg = _settings(persistence="embedded")
