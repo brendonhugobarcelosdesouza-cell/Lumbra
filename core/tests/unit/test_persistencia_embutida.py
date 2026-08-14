@@ -6,6 +6,7 @@ e o endereço dos dados. O teste que sobe o servidor mesmo vive em
 porque este arquivo tem que rodar em qualquer máquina, em milissegundos.
 """
 
+import os
 from pathlib import Path
 
 import pytest
@@ -75,6 +76,39 @@ class TestOndeEstaoAsMigracoes:
         destino = Path(_config_alembic().get_main_option("script_location") or "")
         assert destino.is_absolute()
         assert (destino / "versions").is_dir()
+
+
+class TestPadraoNaoAtropelaEscolha:
+    """Padrão que sobrescreve configuração explícita não é padrão."""
+
+    def test_variavel_de_ambiente_e_respeitada(self, monkeypatch):
+        from lumbra.cli.main import _padrao
+
+        monkeypatch.setenv("LUMBRA_PERSISTENCE", "memory")
+        _padrao("LUMBRA_PERSISTENCE", "embedded")
+        assert os.environ["LUMBRA_PERSISTENCE"] == "memory"
+
+    def test_o_env_tambem_conta_como_escolha(self, monkeypatch, tmp_path):
+        """O bug real: o ``.env`` não está em ``os.environ``, então
+        ``setdefault`` não o via e o padrão do comando vencia. Com
+        ``LUMBRA_ENVIRONMENT=local`` no arquivo, ``lumbra up`` subia em
+        produção assim mesmo — e reprovava o segredo de desenvolvimento numa
+        máquina que dizia, por escrito, não ser produção."""
+        from lumbra.cli.main import _padrao
+
+        monkeypatch.delenv("LUMBRA_ENVIRONMENT", raising=False)
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".env").write_text("LUMBRA_ENVIRONMENT=local\n", encoding="utf-8")
+        _padrao("LUMBRA_ENVIRONMENT", "production")
+        assert os.environ.get("LUMBRA_ENVIRONMENT") is None
+
+    def test_sem_escolha_nenhuma_o_padrao_vale(self, monkeypatch, tmp_path):
+        from lumbra.cli.main import _padrao
+
+        monkeypatch.delenv("LUMBRA_PERSISTENCE", raising=False)
+        monkeypatch.chdir(tmp_path)  # sem .env
+        _padrao("LUMBRA_PERSISTENCE", "embedded")
+        assert os.environ["LUMBRA_PERSISTENCE"] == "embedded"
 
 
 class TestSegredoDaInstalacao:

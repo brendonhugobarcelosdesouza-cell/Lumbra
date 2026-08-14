@@ -139,6 +139,36 @@ def _preparar_embutido() -> bool:
     return True
 
 
+def _ja_configurado(chave: str) -> bool:
+    """O usuário já decidiu isto — na variável de ambiente ou no ``.env``?
+
+    ``os.environ.setdefault`` parecia suficiente e não era: o ``.env`` não
+    está em ``os.environ``, então o "padrão" do comando **vencia** uma
+    escolha explícita do usuário. Com ``LUMBRA_ENVIRONMENT=local`` no
+    arquivo, o ``lumbra up`` subia em ``production`` assim mesmo — e a
+    primeira consequência foi ele reprovar o segredo de JWT de
+    desenvolvimento numa máquina que dizia, por escrito, não ser produção.
+
+    Padrão que sobrescreve configuração explícita não é padrão: é ordem
+    disfarçada.
+    """
+    if chave in os.environ:
+        return True
+    env = Path(".env")
+    if not env.exists():
+        return False
+    return any(
+        linha.strip().startswith(f"{chave}=")
+        for linha in env.read_text(encoding="utf-8").splitlines()
+    )
+
+
+def _padrao(chave: str, valor: str) -> None:
+    """Define ``chave`` só se o usuário não tiver decidido antes."""
+    if not _ja_configurado(chave):
+        os.environ[chave] = valor
+
+
 def _garantir_segredo_local() -> None:
     """Dá a esta instalação uma chave só dela (ADR-070).
 
@@ -149,7 +179,9 @@ def _garantir_segredo_local() -> None:
     """
     from lumbra.shared.segredo_local import caminho_do_segredo, segredo_desta_instalacao
 
-    if os.environ.get("LUMBRA_SECURITY__JWT_SECRET"):
+    # pelo mesmo motivo de _ja_configurado: uma chave escrita no .env é
+    # escolha do usuário e não pode ser trocada por uma gerada por nós
+    if _ja_configurado("LUMBRA_SECURITY__JWT_SECRET"):
         return
     os.environ["LUMBRA_SECURITY__JWT_SECRET"] = segredo_desta_instalacao()
     get_settings.cache_clear()
@@ -241,8 +273,8 @@ def _servir(*, reload: bool, host: str, porta: int) -> int:
 
 def comando_dev(args: argparse.Namespace) -> int:
     console.titulo("Lumbra — ambiente de desenvolvimento")
-    os.environ.setdefault("LUMBRA_ENVIRONMENT", "local")
-    os.environ.setdefault("LUMBRA_PERSISTENCE", "postgres")
+    _padrao("LUMBRA_ENVIRONMENT", "local")
+    _padrao("LUMBRA_PERSISTENCE", "postgres")
     _subir_servicos()
     if not _aplicar_migracoes():
         return 1
@@ -259,13 +291,13 @@ def comando_up(args: argparse.Namespace) -> int:
     """Produção local: sem recarga automática e SEM subir se algo estiver
     quebrado — em produção, falhar cedo é melhor que servir errado."""
     console.titulo("Lumbra — modo produção local")
-    os.environ.setdefault("LUMBRA_ENVIRONMENT", "production")
+    _padrao("LUMBRA_ENVIRONMENT", "production")
     # 'embedded' por padrão porque `up` é o Nó como PRODUTO: é o que o
     # instalador vai chamar, na máquina de alguém que não tem Docker e não
     # deveria precisar ter. Quem prefere um banco próprio define
     # LUMBRA_PERSISTENCE=postgres. `lumbra dev` segue no compose — lá o
     # Docker é ferramenta de trabalho, não requisito imposto ao usuário.
-    os.environ.setdefault("LUMBRA_PERSISTENCE", "embedded")
+    _padrao("LUMBRA_PERSISTENCE", "embedded")
     _garantir_segredo_local()
     _subir_servicos()
     if not _aplicar_migracoes():
