@@ -10,10 +10,17 @@ resposta. Um programa que guarda dados pessoais precisa de um endereço fixo.
 from __future__ import annotations
 
 import os
-import sys
+import platform
 from pathlib import Path
 
 _NOME = "Lumbra"
+
+# ``platform.system()`` e não ``sys.platform``: o mypy resolve ``sys.platform``
+# ESTATICAMENTE, para o sistema de quem está checando. Numa máquina Windows
+# ele conclui que os ramos de macOS e Linux são inalcançáveis; no CI (Linux),
+# que o ramo do Windows é. Justamente num arquivo cuja razão de existir é
+# diferenciar sistemas, isso transforma o modo estrito em ruído.
+_SISTEMA = platform.system()
 
 
 def pasta_de_dados() -> Path:
@@ -27,14 +34,14 @@ def pasta_de_dados() -> Path:
     if definido:
         return Path(definido).expanduser()
 
-    if sys.platform == "win32":
+    if _SISTEMA == "Windows":
         # LOCALAPPDATA e não APPDATA: em domínio corporativo, APPDATA é
         # sincronizado com o servidor a cada login. Um diretório de Postgres
         # viajando pela rede seria lento e corromperia com dois logins.
         base = os.environ.get("LOCALAPPDATA")
         raiz = Path(base) if base else Path.home() / "AppData" / "Local"
         return raiz / _NOME
-    if sys.platform == "darwin":
+    if _SISTEMA == "Darwin":
         return Path.home() / "Library" / "Application Support" / _NOME
 
     # Linux e afins: XDG. Minúsculo porque é a convenção lá.

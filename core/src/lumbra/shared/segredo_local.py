@@ -21,8 +21,8 @@ partida e o guarda ao lado dos dados. Cada Lumbra passa a ter uma chave
 from __future__ import annotations
 
 import os
+import platform
 import secrets
-import sys
 from pathlib import Path
 
 from lumbra.shared.logging import get_logger
@@ -65,7 +65,9 @@ def _restringir(arquivo: Path) -> None:
     mexer em ACL daqui erraria mais do que protegeria. Em POSIX o diretório
     pessoal costuma ser legível por outros, então o modo importa.
     """
-    if sys.platform == "win32":
+    # ver a nota em paths.py: sys.platform é resolvido estaticamente pelo
+    # mypy e faria este `return` parecer código morto num dos dois sistemas
+    if platform.system() == "Windows":
         return
     try:
         os.chmod(arquivo, 0o600)  # noqa: PTH101 - Path.chmod não aceita follow_symlinks aqui
