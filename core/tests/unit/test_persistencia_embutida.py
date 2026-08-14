@@ -6,6 +6,7 @@ e o endereço dos dados. O teste que sobe o servidor mesmo vive em
 porque este arquivo tem que rodar em qualquer máquina, em milissegundos.
 """
 
+import json
 import os
 from pathlib import Path
 
@@ -76,6 +77,74 @@ class TestOndeEstaoAsMigracoes:
         destino = Path(_config_alembic().get_main_option("script_location") or "")
         assert destino.is_absolute()
         assert (destino / "versions").is_dir()
+
+
+class TestDonosFantasmas:
+    """Por que o banco não desligava mesmo com o Nó encerrando direito.
+
+    O ``pgserver`` guarda em ``.handle_pids.json`` quem está usando o
+    servidor, e só desliga o Postgres quando quem sai é o ÚLTIMO da lista.
+    Todo Nó morto à força deixou o PID dele ali para sempre — e a partir daí
+    a lista nunca mais fica com um só. O sintoma foi cruel de ler: o Nó
+    encerrava com dignidade, o ``lumbra.exe`` sumia, e seis ``postgres.exe``
+    continuavam de pé.
+    """
+
+    def _lista(self, tmp_path: Path, pids: list[int]) -> Path:
+        pasta = tmp_path / "postgres"
+        pasta.mkdir()
+        (pasta / ".handle_pids.json").write_text(json.dumps(pids), encoding="utf-8")
+        return pasta
+
+    def test_pid_de_processo_morto_sai_da_lista(self, tmp_path):
+        from lumbra.adapters.persistence.embedded import limpar_donos_fantasmas
+
+        # PIDs altíssimos: não existem em nenhum sistema real em uso normal
+        pasta = self._lista(tmp_path, [999_001, 999_002, os.getpid()])
+        assert limpar_donos_fantasmas(pasta) == 2
+        assert json.loads((pasta / ".handle_pids.json").read_text()) == [os.getpid()]
+
+    def test_processo_vivo_continua_dono(self, tmp_path):
+        """A invariante do ADR-067 do outro lado: quem ainda usa o banco
+        segura o banco. Limpar demais derrubaria o Nó de alguém."""
+        from lumbra.adapters.persistence.embedded import limpar_donos_fantasmas
+
+        pasta = self._lista(tmp_path, [os.getpid()])
+        assert limpar_donos_fantasmas(pasta) == 0
+        assert json.loads((pasta / ".handle_pids.json").read_text()) == [os.getpid()]
+
+    def test_lista_ilegivel_nao_derruba_o_no(self, tmp_path):
+        """Encerrar não pode virar um erro novo."""
+        from lumbra.adapters.persistence.embedded import limpar_donos_fantasmas
+
+        pasta = tmp_path / "postgres"
+        pasta.mkdir()
+        (pasta / ".handle_pids.json").write_text("isto não é json", encoding="utf-8")
+        assert limpar_donos_fantasmas(pasta) == 0
+
+    def test_sem_lista_nao_ha_o_que_limpar(self, tmp_path):
+        from lumbra.adapters.persistence.embedded import limpar_donos_fantasmas
+
+        assert limpar_donos_fantasmas(tmp_path / "nunca-existiu") == 0
+
+    def test_zumbi_nao_segura_o_banco(self, monkeypatch, tmp_path):
+        """``pid_exists`` diz sim para processo morto que o pai ainda não
+        recolheu. Contar um zumbi como dono mantém o Postgres de pé por causa
+        de alguém que já morreu — o mesmo erro, com outra roupa."""
+        import psutil
+
+        from lumbra.adapters.persistence import embedded
+
+        class _Zumbi:
+            def __init__(self, pid):
+                pass
+
+            def status(self):
+                return psutil.STATUS_ZOMBIE
+
+        monkeypatch.setattr(psutil, "Process", _Zumbi)
+        pasta = self._lista(tmp_path, [12345])
+        assert embedded.limpar_donos_fantasmas(pasta) == 1
 
 
 class TestPadraoNaoAtropelaEscolha:

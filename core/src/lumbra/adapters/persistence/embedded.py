@@ -20,6 +20,7 @@ promovê-la de ferramenta de teste a modo de execução.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -84,6 +85,59 @@ def dsn_se_estiver_no_ar(pasta: Path) -> str | None:
         return None
 
 
+def _processo_vivo(pid: int) -> bool:
+    """Vivo de verdade — zumbi não conta.
+
+    ``pid_exists`` devolve ``True`` para processo já morto cujo pai ainda não
+    o recolheu. Contar um zumbi como dono do banco mantém o Postgres de pé
+    por causa de alguém que já morreu, que é exatamente o erro que estamos
+    consertando.
+    """
+    try:
+        import psutil
+
+        return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+    except Exception:
+        return False  # não existe, ou não conseguimos olhar: não segura o banco
+
+
+def limpar_donos_fantasmas(pasta: Path) -> int:
+    """Remove da lista de donos os processos que já morreram.
+
+    O ``pgserver`` conta quem está usando o servidor num arquivo
+    (``.handle_pids.json``) e só desliga o Postgres quando o processo que sai
+    é o ÚLTIMO da lista. Elegante — e frágil de um jeito que só aparece
+    depois: todo Nó que morre sem se despedir deixa o PID dele ali para
+    sempre, e a partir daí a lista NUNCA mais fica com um só. O servidor
+    passa a sobreviver a todo encerramento, inclusive aos limpos.
+
+    Foi exatamente o que aconteceu: o Nó já encerrava com dignidade
+    (ADR-071), o ``lumbra.exe`` sumia direitinho, e seis ``postgres.exe``
+    continuavam de pé — herdados de mortes anteriores, quando o encerramento
+    ainda era à força.
+
+    Um PID pode ser reaproveitado pelo sistema, então "existe" não prova que
+    é o mesmo processo. O erro possível aqui é conservador: mantemos um dono
+    a mais e o servidor sobrevive — que é o estado de hoje, não uma piora.
+    """
+    import json
+
+    arquivo = pasta / ".handle_pids.json"
+    if not arquivo.exists():
+        return 0
+    try:
+        pids = json.loads(arquivo.read_text(encoding="utf-8"))
+        vivos = [pid for pid in pids if _processo_vivo(pid)]
+    except Exception as exc:  # arquivo ilegível ou psutil ausente: não é fatal
+        _log.warning("donos_do_banco_ilegiveis", pasta=str(pasta), erro=repr(exc))
+        return 0
+    if len(vivos) == len(pids):
+        return 0
+    arquivo.write_text(json.dumps(vivos), encoding="utf-8")
+    _log.info("donos_fantasmas_removidos", quantos=len(pids) - len(vivos), pasta=str(pasta))
+    return len(pids) - len(vivos)
+
+
 class ServidorEmbutido:
     """O Postgres do Nó. Um por pasta de dados.
 
@@ -98,6 +152,9 @@ class ServidorEmbutido:
         self.pasta = pasta
         # a pasta-mãe precisa existir: o pgserver cria só o último nível
         pasta.parent.mkdir(parents=True, exist_ok=True)
+        # antes de somar o nosso nome à lista de donos, tira os mortos dela —
+        # senão herdamos a contagem errada e o banco nunca mais desliga
+        limpar_donos_fantasmas(pasta)
         self._servidor = self._iniciar(pasta)
         self.dsn = traduzir_uri(self._servidor.get_uri())
         _log.info("postgres_embutido_no_ar", pasta=str(pasta))
@@ -144,6 +201,71 @@ def preparar_banco(
 
 
 _servidores: dict[Path, ServidorEmbutido] = {}
+
+
+def _donos_vivos(pasta: Path) -> list[int]:
+    import json
+
+    arquivo = pasta / ".handle_pids.json"
+    if not arquivo.exists():
+        return []
+    try:
+        pids = json.loads(arquivo.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    meu = os.getpid()
+    return [pid for pid in pids if pid != meu and _processo_vivo(pid)]
+
+
+def _desligar_postmaster(pasta: Path) -> bool:
+    """Manda o Postgres parar, direto. Devolve se conseguiu.
+
+    ``-m fast`` derruba as conexões abertas mas fecha o checkpoint direito —
+    é o desligamento educado, não o violento. O violento é o que já custou
+    caro uma vez.
+    """
+    try:
+        import pgserver
+
+        pgserver.pg_ctl(["-w", "-t", "60", "-m", "fast", "stop"], pgdata=pasta)
+    except Exception as exc:
+        _log.warning("postmaster_nao_desligou", pasta=str(pasta), erro=repr(exc))
+        return False
+    _log.info("postmaster_desligado", pasta=str(pasta))
+    return True
+
+
+def parar_embutidos() -> None:
+    """Desliga o que nós subimos — sem depender de contagem alheia.
+
+    Duas tentativas, nesta ordem, e a segunda existe porque a primeira já
+    falhou em silêncio.
+
+    A primeira é pedir ao ``pgserver`` (``cleanup``), que consulta a lista de
+    donos em ``.handle_pids.json`` e só desliga se formos o último. Elegante,
+    e quebrado por herança: todo Nó morto à força deixou o PID dele naquela
+    lista para sempre, e a partir daí ela nunca mais tem um só. O sintoma foi
+    o Nó encerrando com dignidade enquanto seis ``postgres.exe`` ficavam de
+    pé.
+
+    A segunda é olhar nós mesmos: se não sobrou nenhum dono VIVO, o banco não
+    é de mais ninguém e nós o desligamos. É o que garante o resultado em vez
+    de torcer por ele — e continua respeitando a invariante do ADR-067,
+    porque um Nó vivo na lista nos faz recuar.
+    """
+    for pasta, servidor in list(_servidores.items()):
+        try:
+            servidor.parar()
+        except Exception as exc:  # encerrar nunca pode virar um erro novo
+            _log.warning("falha_ao_parar_embutido", pasta=str(pasta), erro=repr(exc))
+        limpar_donos_fantasmas(pasta)
+        restantes = _donos_vivos(pasta)
+        if restantes:
+            _log.info("banco_fica_de_pe_para_outro_no", pasta=str(pasta), donos=restantes)
+            continue
+        if dsn_se_estiver_no_ar(pasta) is not None:
+            _desligar_postmaster(pasta)
+    _servidores.clear()
 
 
 # canário anti-truncamento

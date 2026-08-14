@@ -320,7 +320,14 @@ def _servir(*, reload: bool, host: str, porta: int, seguir_a_entrada: bool = Fal
     )
     if seguir_a_entrada:
         threading.Thread(target=_vigiar_a_entrada, args=(servidor,), daemon=True).start()
-    servidor.run()
+    try:
+        servidor.run()
+    finally:
+        # o banco embutido é NOSSO: desligá-lo faz parte de encerrar, e não
+        # é tarefa que se delegue ao acaso de um atexit
+        from lumbra.adapters.persistence.embedded import parar_embutidos
+
+        parar_embutidos()
     return 0
 
 
