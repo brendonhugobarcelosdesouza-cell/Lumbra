@@ -21,6 +21,7 @@ promovê-la de ferramenta de teste a modo de execução.
 from __future__ import annotations
 
 import os
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -96,7 +97,7 @@ def _processo_vivo(pid: int) -> bool:
     try:
         import psutil
 
-        return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+        return bool(psutil.Process(pid).status() != psutil.STATUS_ZOMBIE)
     except Exception:
         return False  # não existe, ou não conseguimos olhar: não segura o banco
 
@@ -220,16 +221,33 @@ def _donos_vivos(pasta: Path) -> list[int]:
 def _desligar_postmaster(pasta: Path) -> bool:
     """Manda o Postgres parar, direto. Devolve se conseguiu.
 
+    Chamamos o executável em vez de ``pgserver.pg_ctl`` porque aquela função
+    é montada em tempo de execução (o verificador de tipos não a enxerga) e
+    porque o tempo limite importa: a biblioteca fixa 10 segundos, e foi
+    exatamente esse limite que impediu a recuperação de um cluster que
+    precisava de 30.
+
     ``-m fast`` derruba as conexões abertas mas fecha o checkpoint direito —
-    é o desligamento educado, não o violento. O violento é o que já custou
-    caro uma vez.
+    é o desligamento educado. O violento já custou caro uma vez.
     """
     try:
-        import pgserver
+        from pgserver._commands import POSTGRES_BIN_PATH
 
-        pgserver.pg_ctl(["-w", "-t", "60", "-m", "fast", "stop"], pgdata=pasta)
+        executavel = POSTGRES_BIN_PATH / ("pg_ctl.exe" if os.name == "nt" else "pg_ctl")
+        resultado = subprocess.run(  # noqa: S603 - caminho vem do pacote, não do usuário
+            [str(executavel), "-D", str(pasta), "-w", "-t", "60", "-m", "fast", "stop"],
+            capture_output=True,
+            text=True,
+            timeout=90,
+            check=False,
+        )
     except Exception as exc:
         _log.warning("postmaster_nao_desligou", pasta=str(pasta), erro=repr(exc))
+        return False
+    if resultado.returncode != 0:
+        _log.warning(
+            "postmaster_nao_desligou", pasta=str(pasta), saida=resultado.stderr.strip()[:300]
+        )
         return False
     _log.info("postmaster_desligado", pasta=str(pasta))
     return True

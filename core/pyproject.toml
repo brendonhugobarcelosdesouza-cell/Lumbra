@@ -34,6 +34,9 @@ dependencies = [
     # permite o Nó rodar na máquina do usuário sem Docker (ADR-069). Era
     # dependência só de teste; virou modo de execução.
     "pgserver>=0.1.4",
+    # já vinha junto do pgserver; passou a ser importado DIRETO para saber
+    # quais donos do banco ainda existem, então vira dependência declarada
+    "psutil>=5.9",
 ]
 
 [project.optional-dependencies]
@@ -47,6 +50,7 @@ dev = [
     # lá". Fixar garante que o gate seja idêntico em toda máquina.
     "ruff==0.16.0",
     "mypy==2.3.0",
+    "types-psutil",  # o psutil não traz tipos; sem isto o modo estrito reprova
 ]
 
 [project.scripts]
