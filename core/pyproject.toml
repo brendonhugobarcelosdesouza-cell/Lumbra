@@ -51,6 +51,7 @@ dev = [
     "ruff==0.16.0",
     "mypy==2.3.0",
     "types-psutil",  # o psutil não traz tipos; sem isto o modo estrito reprova
+    "pyinstaller>=6.10",  # congela o Nó para o instalador (P2-f.3)
 ]
 
 [project.scripts]

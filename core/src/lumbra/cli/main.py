@@ -309,9 +309,16 @@ def _servir(*, reload: bool, host: str, porta: int, seguir_a_entrada: bool = Fal
         )
         return 0
 
+    # a fábrica entra como OBJETO, não como texto "lumbra.api.main:...".
+    # Congelado, um import por nome é invisível para o empacotador: ele não
+    # tem como saber que aquele texto é um módulo, e o executável sai sem a
+    # aplicação dentro. O sintoma seria ótimo de errar e péssimo de achar —
+    # roda no repositório, quebra na máquina de quem instalou.
+    from lumbra.api.main import create_default_app
+
     servidor = uvicorn.Server(
         uvicorn.Config(
-            "lumbra.api.main:create_default_app",
+            create_default_app,
             factory=True,
             host=host,
             port=porta,
