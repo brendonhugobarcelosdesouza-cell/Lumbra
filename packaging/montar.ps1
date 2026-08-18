@@ -24,13 +24,31 @@ Write-Host ""
 Write-Host "== Lumbra: montando o conjunto ==" -ForegroundColor Cyan
 
 # 1. O No -------------------------------------------------------------
-if (-not (Test-Path (Join-Path $noConstruido "lumbra.exe"))) {
-    Write-Host "   No ainda nao congelado; construindo..." -ForegroundColor DarkGray
+$exeCongelado = Join-Path $noConstruido "lumbra.exe"
+$precisaCongelar = $true
+$motivo = "ainda nao congelado"
+
+if (Test-Path $exeCongelado) {
+    # O pacote e mais novo que o codigo? Reaproveitar um No desatualizado e
+    # o pior tipo de economia: o conjunto monta, o script aprova, e o que vai
+    # para o instalador e a versao ANTERIOR. Aconteceu na primeira montagem -
+    # o No embalado ainda tinha o bug do .env que acabara de ser corrigido.
+    $congeladoEm = (Get-Item $exeCongelado).LastWriteTime
+    $fonteMaisNova = (Get-ChildItem (Join-Path $core "src") -Recurse -File -Include *.py |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1)
+    if ($null -ne $fonteMaisNova -and $fonteMaisNova.LastWriteTime -gt $congeladoEm) {
+        $motivo = "o codigo mudou depois ($($fonteMaisNova.Name))"
+    } else {
+        $precisaCongelar = $false
+    }
+}
+
+if ($precisaCongelar) {
+    Write-Host "   congelando o No: $motivo" -ForegroundColor DarkGray
     & (Join-Path $core "packaging\construir.ps1")
     if ($LASTEXITCODE -ne 0) { throw "a construcao do No falhou" }
 } else {
-    Write-Host "   No ja congelado em $noConstruido" -ForegroundColor DarkGray
-    Write-Host "   (apague core\dist para reconstruir do zero)" -ForegroundColor DarkGray
+    Write-Host "   No congelado esta em dia" -ForegroundColor DarkGray
 }
 
 # 2. O app ------------------------------------------------------------
