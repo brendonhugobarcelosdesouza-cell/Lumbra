@@ -73,10 +73,21 @@ class EstadoDoNo extends Notifier<NodeState> {
   /// processos zumbis e esconderia a causa real. Falhou, a tela explica e o
   /// usuário decide — é dele a máquina.
   Future<NodeState> _tentarSubir() async {
+    final gerente = ref.read(gerenteDoNoProvider);
+
+    // Processo NOSSO ainda vivo é Nó nascendo, não Nó ausente. Sem esta
+    // linha, o vigia perguntava de novo três segundos depois, via que já
+    // tinha tentado uma vez e declarava "fora do ar" — enquanto o Nó
+    // trabalhava. E ele pode trabalhar bastante: recuperar um banco
+    // interrompido leva mais de meio minuto (adendo ao ADR-069). O app
+    // desistia de algo que estava dando certo e mostrava, ao lado, um
+    // comando manual que subiria um SEGUNDO Nó na mesma porta.
+    if (gerente.somosDonos) return NodeState.subindo;
+
     if (_jaTentamosSubir) return NodeState.foraDoAr;
     _jaTentamosSubir = true;
 
-    final resultado = await ref.read(gerenteDoNoProvider).iniciar();
+    final resultado = await gerente.iniciar();
     // 'subindo' só quando o processo nasceu: o vigia é quem confirma que
     // ele passou a responder. Prometer "no ar" aqui seria adivinhação.
     return resultado == PartidaDoNo.iniciado ? NodeState.subindo : NodeState.foraDoAr;

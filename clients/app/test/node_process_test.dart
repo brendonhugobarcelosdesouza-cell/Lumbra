@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumbra_api/api.dart';
+import 'package:lumbra_app/core/api.dart';
 import 'package:lumbra_app/core/node_process.dart';
 // o comando é um CONTRATO entre o app e a CLI: se um lado mudar sozinho, o
 // sintoma aparece só na máquina do usuário
@@ -46,6 +47,14 @@ class _GerenteFalso implements GerenteDoNo {
   final ValueNotifier<String> ultimoErro = ValueNotifier('');
 }
 
+/// Um Nó que não responde — o estado em que ele fica enquanto recupera.
+class _OpsQueNaoResponde extends OpsApi {
+  @override
+  Future<Map<String, String>?> healthHealthGet() async {
+    throw ApiException(503, 'ainda subindo');
+  }
+}
+
 Future<void> _montar(WidgetTester tester, _GerenteFalso gerente, NodeState estado) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -82,6 +91,34 @@ void main() {
     await _montar(tester, _GerenteFalso(), NodeState.noAr);
     await tester.pumpAndSettle();
     expect(find.text('Iniciando o Nó…'), findsNothing);
+  });
+
+  test('Nó nosso ainda vivo é "subindo", nunca "fora do ar"', () async {
+    // O app declarava o Nó morto TRÊS SEGUNDOS depois de o ter iniciado,
+    // porque o vigia só tentava subir uma vez e, na verificação seguinte,
+    // caía direto em "fora do ar". Só que recuperar um banco interrompido
+    // leva mais de meio minuto: o app desistia de algo que estava dando
+    // certo — e oferecia, ao lado, um comando que subiria um SEGUNDO Nó na
+    // mesma porta.
+    final gerente = _GerenteFalso();
+    final container = ProviderContainer(
+      overrides: [
+        gerenteDoNoProvider.overrideWithValue(gerente),
+        // sem rede no teste: o Nó "nunca responde", que é justamente o
+        // estado em que ele está enquanto recupera o banco
+        opsApiProvider.overrideWithValue(_OpsQueNaoResponde()),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final vigia = container.read(nodeStateProvider.notifier);
+    await vigia.verificarAgora(); // não há Nó: sobe um
+    expect(gerente.iniciadas, 1);
+    expect(container.read(nodeStateProvider), NodeState.subindo);
+
+    await vigia.verificarAgora(); // ainda não responde, mas o processo vive
+    expect(container.read(nodeStateProvider), NodeState.subindo);
+    expect(gerente.iniciadas, 1, reason: 'não pode tentar subir um segundo Nó');
   });
 
   group('o comando que o app dá ao Nó', () {

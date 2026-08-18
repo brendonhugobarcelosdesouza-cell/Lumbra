@@ -110,7 +110,9 @@ class _Subindo extends StatelessWidget {
             Text('Iniciando o Nó…', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 6),
             Text(
-              'A primeira vez demora um pouco mais.',
+              'A primeira vez demora um pouco mais. Se a Lumbra foi fechada '
+              'de repente, o banco também precisa se recuperar.',
+              textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
