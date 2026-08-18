@@ -139,6 +139,84 @@ def limpar_donos_fantasmas(pasta: Path) -> int:
     return len(pids) - len(vivos)
 
 
+def _acordar_cluster_existente(pasta: Path) -> None:
+    """Sobe um banco que JÁ EXISTE, com tempo suficiente para se recuperar.
+
+    A armadilha que isto desarma é permanente, e por isso vale explicar
+    inteira. O ``pgserver`` chama ``pg_ctl start`` com limite fixo de **10
+    segundos**. Um cluster desligado de forma limpa sobe em um ou dois — mas
+    um cluster que foi interrompido precisa de recuperação, e no Windows ela
+    custa mais de 30:
+
+        database system was interrupted; last known up at ...
+        could not open file "./log": sharing violation
+        DETAIL:  Continuing to retry for 30 seconds.
+        syncing data directory (fsync), elapsed time: 32.60 s
+
+    Aqueles 30 segundos são culpa do desenho do ``pgserver``, que põe o
+    arquivo de log DENTRO do diretório de dados: na recuperação, o Postgres
+    faz fsync do diretório inteiro e tromba no próprio log, que o ``pg_ctl``
+    mantém aberto. Ele espera, desiste e segue — mas o relógio já passou dos
+    10 segundos, e aí o ``pg_ctl`` é morto por tempo esgotado.
+
+    O efeito é cruel: **uma vez que o banco fica sujo, nenhuma partida
+    futura consegue mais subir**. O usuário não tem como sair sozinho — foi
+    preciso rodar ``pg_ctl -t 90`` à mão para destravar.
+
+    Então, quando o cluster já existe e não está no ar, nós o subimos, com
+    limite generoso e com o log FORA do diretório de dados. Depois o
+    ``pgserver`` apenas se conecta ao que encontrou rodando. Cluster novo
+    continua com ele: recém-criado não tem o que recuperar.
+    """
+    if not (pasta / "PG_VERSION").exists():
+        return  # não existe cluster ainda: initdb do pgserver dá conta
+    if dsn_se_estiver_no_ar(pasta) is not None:
+        return  # já está de pé; o pgserver vai se conectar
+    try:
+        from pgserver._commands import POSTGRES_BIN_PATH
+        from pgserver.utils import find_suitable_port
+
+        registro = pasta.parent / "logs" / "postgres.log"
+        registro.parent.mkdir(parents=True, exist_ok=True)
+        executavel = POSTGRES_BIN_PATH / ("pg_ctl.exe" if os.name == "nt" else "pg_ctl")
+        porta = find_suitable_port("127.0.0.1")
+        _log.info("acordando_cluster_existente", pasta=str(pasta), limite_s=_LIMITE_PARTIDA)
+        resultado = subprocess.run(  # noqa: S603 - caminho vem do pacote
+            [
+                str(executavel),
+                "-D",
+                str(pasta),
+                "-w",
+                "-t",
+                str(_LIMITE_PARTIDA),
+                "-o",
+                '-h "127.0.0.1"',
+                "-o",
+                f"-p {porta}",
+                "-l",
+                str(registro),
+                "start",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=_LIMITE_PARTIDA + 30,
+            check=False,
+        )
+    except Exception as exc:  # deixa o pgserver tentar e falhar com a mensagem dele
+        _log.warning("nao_consegui_acordar_o_cluster", pasta=str(pasta), erro=repr(exc))
+        return
+    if resultado.returncode != 0:
+        _log.warning(
+            "cluster_nao_acordou", pasta=str(pasta), saida=(resultado.stderr or "").strip()[:400]
+        )
+
+
+# 180s porque a recuperação de um cluster interrompido no Windows passa
+# tranquilamente de 60. Esperar demais custa uma tela de "iniciando o Nó";
+# esperar de menos custa um banco que nunca mais abre.
+_LIMITE_PARTIDA = 180
+
+
 class ServidorEmbutido:
     """O Postgres do Nó. Um por pasta de dados.
 
@@ -170,6 +248,7 @@ class ServidorEmbutido:
                 "Instale com `pip install pgserver` ou use "
                 "LUMBRA_PERSISTENCE=postgres com um banco próprio."
             ) from exc
+        _acordar_cluster_existente(pasta)
         return pgserver.get_server(pasta, cleanup_mode="stop")
 
     def parar(self) -> None:

@@ -111,6 +111,33 @@ def test_no_morto_a_forca_nao_condena_o_banco_a_viver_para_sempre(roteiro, pasta
     assert not _postgres_no_ar(pasta), "o Postgres sobreviveu a um encerramento limpo"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="usa SIGKILL para sujar o cluster")
+def test_cluster_sujo_ainda_consegue_subir(roteiro, pasta):
+    """A armadilha permanente: banco sujo que nunca mais abre.
+
+    O ``pgserver`` dá 10 segundos ao ``pg_ctl start``. Um cluster que foi
+    interrompido precisa de recuperação, e no Windows ela passa de 30 (o
+    Postgres tromba no próprio arquivo de log, que fica dentro do diretório
+    de dados, e espera 30 segundos por ele). Resultado: a partir da primeira
+    parada suja, TODA partida futura estourava o tempo — e o usuário não
+    tinha como sair sozinho.
+
+    Aqui matamos o postmaster à força e exigimos que a próxima partida
+    funcione.
+    """
+    no = _subir_no(roteiro, pasta)
+    pid = int((pasta / "postmaster.pid").read_text(encoding="utf-8").splitlines()[0])
+    os.kill(pid, signal.SIGKILL)  # o banco fica sujo
+    time.sleep(1)
+    _encerrar_bem(no)
+
+    from lumbra.adapters.persistence.embedded import dsn_se_estiver_no_ar
+
+    seguinte = _subir_no(roteiro, pasta)  # tem que dar conta da recuperação
+    assert dsn_se_estiver_no_ar(pasta) is not None, "o cluster sujo não subiu"
+    _encerrar_bem(seguinte)
+
+
 def test_com_dois_nos_quem_sai_nao_derruba_o_banco_do_outro(roteiro, pasta):
     """A invariante do ADR-067 aplicada ao banco: derrubar o Postgres de um
     Nó vivo daria o pior sintoma possível — "o banco cai sozinho" — sem nada
