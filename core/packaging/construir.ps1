@@ -57,6 +57,18 @@ if (-not $noVenv) {
     Write-Host ""
 }
 
+# Um postgres.exe de uma execucao anterior segura os arquivos do proprio
+# pacote, e a reconstrucao morre com "Acesso negado" - um erro que nao diz
+# nada sobre a causa. Melhor avisar antes de tentar.
+$presos = @(Get-CimInstance Win32_Process -Filter "Name='postgres.exe'" |
+    Where-Object { $_.ExecutablePath -like "$saida*" })
+if ($presos.Count -gt 0) {
+    Write-Host "Ha $($presos.Count) postgres.exe rodando de DENTRO do pacote anterior." -ForegroundColor Yellow
+    Write-Host "Eles seguram os arquivos e a reconstrucao falharia. Parando..." -ForegroundColor Yellow
+    $presos | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Seconds 2
+}
+
 Push-Location $core
 try {
     # --noconfirm: reconstruir e o caso normal, nao a excecao
@@ -94,14 +106,37 @@ try {
     & $exe version
     if ($LASTEXITCODE -ne 0) { throw "o executavel nao roda" }
 
-    # `up` sobe o banco, migra e serve; damos 3 minutos e derrubamos fechando
-    # a entrada padrao - o mesmo caminho que o app usa (ADR-071)
+    # Subimos do jeito que o APP sobe: com --seguir-a-entrada, e depois
+    # fechando a entrada padrao. Nao e detalhe de teste - e o unico jeito de
+    # provar que o encerramento limpo (ADR-071) funciona no executavel
+    # congelado. A versao anterior deste script derrubava o No com
+    # Stop-Process -Force e deixava um postgres.exe segurando os arquivos do
+    # proprio pacote: a reconstrucao seguinte falhava com "Acesso negado".
+    # O script reproduzia, nele mesmo, o bug que o produto tinha acabado de
+    # consertar.
     Write-Host ""
     Write-Host "   subindo o No congelado..." -ForegroundColor DarkGray
-    $processo = Start-Process -FilePath $exe -ArgumentList "up" `
-        -RedirectStandardOutput (Join-Path $temp "saida.log") `
-        -RedirectStandardError (Join-Path $temp "erro.log") `
-        -PassThru -NoNewWindow
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $exe
+    $psi.Arguments = "up --seguir-a-entrada"
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $processo = New-Object System.Diagnostics.Process
+    $processo.StartInfo = $psi
+
+    # consumir a saida e obrigatorio: cano cheio TRAVA o filho, e o sintoma
+    # (fica lento e para) nao parece ter relacao nenhuma com log
+    $registro = New-Object System.Text.StringBuilder
+    $aoSair = {
+        if ($null -ne $EventArgs.Data) { [void]$registro.AppendLine($EventArgs.Data) }
+    }
+    Register-ObjectEvent -InputObject $processo -EventName OutputDataReceived -Action $aoSair | Out-Null
+    Register-ObjectEvent -InputObject $processo -EventName ErrorDataReceived -Action $aoSair | Out-Null
+    [void]$processo.Start()
+    $processo.BeginOutputReadLine()
+    $processo.BeginErrorReadLine()
     $viva = $false
     for ($i = 0; $i -lt 90; $i++) {
         Start-Sleep -Seconds 2
@@ -115,9 +150,8 @@ try {
     if (-not $viva) {
         Write-Host ""
         Write-Host "O No congelado NAO respondeu. Log:" -ForegroundColor Red
-        Get-Content (Join-Path $temp "saida.log") -Tail 40 -ErrorAction SilentlyContinue
-        Get-Content (Join-Path $temp "erro.log") -Tail 40 -ErrorAction SilentlyContinue
-        if (-not $processo.HasExited) { Stop-Process -Id $processo.Id -Force }
+        Write-Host $registro.ToString()
+        if (-not $processo.HasExited) { $processo.Kill() }
         exit 1
     }
 
@@ -141,18 +175,37 @@ try {
         Write-Host ""
         Write-Host "O pacote subiu, mas falta coisa dentro dele:" -ForegroundColor Red
         $quebrados | ForEach-Object { Write-Host "   $_" -ForegroundColor Red }
-        Stop-Process -Id $processo.Id -Force
+        $processo.StandardInput.Close()
+        $null = $processo.WaitForExit(60000)
         exit 1
     }
 
-    Stop-Process -Id $processo.Id -Force
-    Start-Sleep -Seconds 3
-    Get-Process postgres -ErrorAction SilentlyContinue |
-        Where-Object { $_.Path -like "*$temp*" } |
-        Stop-Process -Force -ErrorAction SilentlyContinue
-
+    # Fechar a entrada e PEDIR que o No encerre. Se o pacote estiver certo,
+    # ele desliga o Postgres antes de sair (ADR-071 + o conserto dos donos
+    # fantasmas). Este e o teste mais valioso do script.
     Write-Host ""
-    Write-Host "== O No congelado sobe, migra e responde ==" -ForegroundColor Green
+    Write-Host "   pedindo o encerramento (fechando a entrada padrao)..." -ForegroundColor DarkGray
+    $processo.StandardInput.Close()
+    if (-not $processo.WaitForExit(60000)) {
+        Write-Host "O No congelado nao encerrou em 60s." -ForegroundColor Red
+        $processo.Kill()
+        exit 1
+    }
+    Start-Sleep -Seconds 3
+
+    $sobrou = @(Get-CimInstance Win32_Process -Filter "Name='postgres.exe'" |
+        Where-Object { $_.CommandLine -like "*$temp*" })
+    if ($sobrou.Count -gt 0) {
+        Write-Host ""
+        Write-Host "O No saiu, mas deixou $($sobrou.Count) postgres.exe de pe." -ForegroundColor Red
+        Write-Host "E o bug dos donos fantasmas voltando - nao siga sem investigar." -ForegroundColor Red
+        $sobrou | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        exit 1
+    }
+
+    Write-Host "   encerrou sozinho e desligou o banco junto" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "== O No congelado sobe, migra, responde e sai limpo ==" -ForegroundColor Green
     Write-Host "   $exe"
 }
 finally {
