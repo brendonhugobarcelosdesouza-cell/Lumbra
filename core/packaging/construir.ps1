@@ -10,6 +10,11 @@
 
 $ErrorActionPreference = "Stop"
 
+# O No fala UTF-8; sem isto o console decodifica com a pagina de codigo
+# antiga e "indices" chega como "Yndices". Log ilegivel e log que ninguem le.
+$codificacaoAnterior = [Console]::OutputEncoding
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
 $core = Split-Path -Parent $PSScriptRoot
 $saida = Join-Path $core "dist"
 $spec = Join-Path $PSScriptRoot "lumbra.spec"
@@ -212,4 +217,5 @@ finally {
     Remove-Item Env:\LUMBRA_DATA_DIR -ErrorAction SilentlyContinue
     Remove-Item Env:\LUMBRA_PERSISTENCE -ErrorAction SilentlyContinue
     Remove-Item Env:\LUMBRA_EVENTBUS -ErrorAction SilentlyContinue
+    [Console]::OutputEncoding = $codificacaoAnterior
 }

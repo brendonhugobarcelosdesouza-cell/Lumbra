@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -112,7 +113,10 @@ class GerenteDoNoDesktop implements GerenteDoNo {
 
   static void _registrar(List<int> bytes) {
     if (!kDebugMode) return;
-    debugPrint('[Nó] ${String.fromCharCodes(bytes).trimRight()}');
+    // utf8.decode e não String.fromCharCodes: o segundo trata cada byte como
+    // um caractere, então "índices" virava "Ã­ndices" no log. `allowMalformed`
+    // porque log truncado no meio de um caractere não pode derrubar nada.
+    debugPrint('[Nó] ${utf8.decode(bytes, allowMalformed: true).trimRight()}');
   }
 
   /// Onde procurar o Nó, em ordem de intenção.
