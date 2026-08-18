@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumbra_api/api.dart';
@@ -42,7 +43,7 @@ class _GerenteFalso implements GerenteDoNo {
   bool get somosDonos => iniciadas > paradas;
 
   @override
-  String get ultimoErro => '';
+  final ValueNotifier<String> ultimoErro = ValueNotifier('');
 }
 
 Future<void> _montar(WidgetTester tester, _GerenteFalso gerente, NodeState estado) async {
@@ -115,7 +116,7 @@ void main() {
       final gerente = GerenteIndisponivel();
       await gerente.parar();
       await gerente.parar();
-      expect(gerente.ultimoErro, isEmpty);
+      expect(gerente.ultimoErro.value, isEmpty);
     });
   });
 }

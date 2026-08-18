@@ -39,13 +39,14 @@ String? get caminhoDoLogDoNoDaPlataforma {
 /// morar ao lado do app o primeiro candidato da lista resolve sozinho.
 class GerenteDoNoDesktop implements GerenteDoNo {
   Process? _processo;
-  String _erro = '';
 
   @override
   bool get somosDonos => _processo != null;
 
+  /// Observável: o motivo costuma chegar DEPOIS da tela ser desenhada,
+  /// porque o Nó pode nascer bem e morrer segundos adiante.
   @override
-  String get ultimoErro => _erro;
+  final ValueNotifier<String> ultimoErro = ValueNotifier('');
 
   @override
   Future<PartidaDoNo> iniciar() async {
@@ -56,7 +57,7 @@ class GerenteDoNoDesktop implements GerenteDoNo {
 
     final comando = _localizarExecutavel();
     if (comando == null) {
-      _erro = 'não encontrei o executável do Nó (procurei ao lado do app e no '
+      ultimoErro.value = 'não encontrei o executável do Nó (procurei ao lado do app e no '
           'ambiente virtual do repositório)';
       return PartidaDoNo.naoEncontrado;
     }
@@ -86,14 +87,14 @@ class GerenteDoNoDesktop implements GerenteDoNo {
           // escondendo justamente a informação que levava à causa. Quem viu o
           // motivo passar foi o log, e ninguém lê o log de um app.
           if (codigo != 0) {
-            _erro = 'o Nó encerrou com código $codigo.\n${_ultimasLinhas()}';
+            ultimoErro.value = 'o Nó encerrou com código $codigo.\n${_ultimasLinhas()}';
           }
         }),
       );
-      _erro = '';
+      ultimoErro.value = '';
       return PartidaDoNo.iniciado;
     } catch (e) {
-      _erro = '$e';
+      ultimoErro.value = '$e';
       _processo = null;
       return PartidaDoNo.falhou;
     }

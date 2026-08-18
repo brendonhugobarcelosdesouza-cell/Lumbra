@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import 'node_process.dart';
 
 /// Sem processo, sem log de processo.
@@ -19,7 +21,7 @@ class GerenteIndisponivel implements GerenteDoNo {
   bool get somosDonos => false;
 
   @override
-  String get ultimoErro => '';
+  final ValueNotifier<String> ultimoErro = ValueNotifier('');
 }
 
 GerenteDoNo criarGerenteDoNo() => GerenteIndisponivel();

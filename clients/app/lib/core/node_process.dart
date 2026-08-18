@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 // Sem `dart:io` no topo: a Web não tem processos, e importar direto quebraria
@@ -42,7 +43,13 @@ abstract class GerenteDoNo {
   bool get somosDonos;
 
   /// O que explicar ao usuário quando algo deu errado (vazio se está tudo bem).
-  String get ultimoErro;
+  ///
+  /// É observável, e não um campo comum, por uma razão descoberta na tela:
+  /// o Nó pode NASCER bem e morrer segundos depois, e aí o motivo aparece
+  /// muito depois de a tela ter sido construída. Lido como campo, o texto
+  /// chegava tarde demais — a tela dizia "o Nó não está no ar" e engolia a
+  /// explicação que já tinha em mãos.
+  ValueListenable<String> get ultimoErro;
 }
 
 /// Onde o Nó guarda o que disse — `null` onde não há Nó local.

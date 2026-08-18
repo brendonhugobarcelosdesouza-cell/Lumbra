@@ -92,7 +92,23 @@ class _PorQueFalhou extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final erro = ref.watch(gerenteDoNoProvider).ultimoErro;
+    // ValueListenableBuilder e não uma leitura simples: o Nó pode nascer bem
+    // e morrer segundos depois, então o motivo chega DEPOIS desta tela ter
+    // sido desenhada. Lendo como campo, a explicação existia e não aparecia.
+    return ValueListenableBuilder<String>(
+      valueListenable: ref.watch(gerenteDoNoProvider).ultimoErro,
+      builder: (context, erro, _) => _Caixa(erro: erro),
+    );
+  }
+}
+
+class _Caixa extends StatelessWidget {
+  const _Caixa({required this.erro});
+
+  final String erro;
+
+  @override
+  Widget build(BuildContext context) {
     if (erro.isEmpty) return const SizedBox.shrink();
     final cores = Theme.of(context).colorScheme;
     return Padding(
