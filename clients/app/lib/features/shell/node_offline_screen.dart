@@ -118,6 +118,16 @@ class _PorQueFalhou extends ConsumerWidget {
               erro,
               style: TextStyle(fontSize: 12.5, color: cores.onErrorContainer),
             ),
+            if (caminhoDoLogDoNo != null) ...[
+              const SizedBox(height: 10),
+              // as últimas linhas raramente contêm o traceback inteiro, e
+              // truncar a única pista é pior que não mostrá-la: manda o
+              // usuário para o arquivo, que tem tudo
+              SelectableText(
+                'Registro completo: $caminhoDoLogDoNo',
+                style: TextStyle(fontSize: 11.5, color: cores.onErrorContainer),
+              ),
+            ],
           ],
         ),
       ),

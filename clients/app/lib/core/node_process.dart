@@ -45,6 +45,12 @@ abstract class GerenteDoNo {
   String get ultimoErro;
 }
 
+/// Onde o Nó guarda o que disse — `null` onde não há Nó local.
+///
+/// A tela de erro precisa disto justamente quando a API não responde, então
+/// não dá para perguntar ao Nó: o caminho vem da convenção, não da rede.
+String? get caminhoDoLogDoNo => caminhoDoLogDoNoDaPlataforma;
+
 final gerenteDoNoProvider = Provider<GerenteDoNo>((ref) {
   final gerente = criarGerenteDoNo();
   ref.onDispose(gerente.parar);

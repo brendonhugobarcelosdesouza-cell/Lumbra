@@ -1,5 +1,8 @@
 import 'node_process.dart';
 
+/// Sem processo, sem log de processo.
+String? get caminhoDoLogDoNoDaPlataforma => null;
+
 /// Plataformas sem processos (Web, e por ora Android).
 ///
 /// Não finge que subiu: devolve `indisponivel` para a interface poder dizer a

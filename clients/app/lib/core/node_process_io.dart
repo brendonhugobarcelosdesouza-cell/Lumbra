@@ -18,6 +18,19 @@ import 'node_process.dart';
 /// ficou precisando de recuperação (correção ao ADR-069).
 const argumentosDoNo = ['up', '--seguir-a-entrada'];
 
+/// Onde o Nó congelado guarda o que disse.
+///
+/// O app não conhece a pasta de dados da Lumbra — ela é uma decisão do Core.
+/// Mas a convenção é estável (`lumbra.shared.paths`) e o valor de apontar o
+/// caminho na tela de erro é grande demais para esperar por uma rota da API
+/// que, no cenário em questão, justamente não está no ar.
+String? get caminhoDoLogDoNoDaPlataforma {
+  if (!Platform.isWindows) return null;
+  final base = Platform.environment['LOCALAPPDATA'];
+  if (base == null || base.isEmpty) return null;
+  return '$base\\Lumbra\\logs\\no.log';
+}
+
 /// Sobe o Nó como processo filho no desktop (ADR-046).
 ///
 /// Enquanto não existe instalador, o executável é procurado subindo o diretório
