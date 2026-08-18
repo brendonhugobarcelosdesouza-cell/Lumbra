@@ -8,6 +8,7 @@ porque este arquivo tem que rodar em qualquer máquina, em milissegundos.
 
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -77,6 +78,30 @@ class TestOndeEstaoAsMigracoes:
         destino = Path(_config_alembic().get_main_option("script_location") or "")
         assert destino.is_absolute()
         assert (destino / "versions").is_dir()
+
+
+class TestDeOndeVemAConfiguracao:
+    """Instalado, o Nó não obedece a arquivo que achou por acaso no caminho."""
+
+    def test_do_repositorio_le_o_env_do_diretorio_atual(self, monkeypatch):
+        from lumbra.shared.config import arquivos_de_configuracao
+
+        monkeypatch.delattr(sys, "frozen", raising=False)
+        assert arquivos_de_configuracao() == (".env",)
+
+    def test_congelado_le_da_pasta_de_dados(self, monkeypatch, tmp_path):
+        """O bug real, e ele quase passou: o app foi aberto de dentro do
+        repositório, o Nó congelado herdou aquele diretório, leu o ``.env`` do
+        projeto e saiu chamando ``docker compose`` numa máquina sem Docker
+        aberto. Instalado, o diretório atual é a pasta de onde clicaram no
+        atalho — pode ser qualquer uma."""
+        from lumbra.shared.config import arquivos_de_configuracao
+
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        monkeypatch.setenv("LUMBRA_DATA_DIR", str(tmp_path))
+        arquivos = arquivos_de_configuracao()
+        assert arquivos == (str(tmp_path / ".env"),)
+        assert ".env" not in arquivos  # nada de caminho relativo
 
 
 class TestDonosFantasmas:

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api.dart';
+import '../../core/node_process.dart';
 import '../../core/node_status.dart';
 
 /// A tela de quando o Nó não responde.
@@ -43,8 +44,15 @@ class NodeOfflineScreen extends ConsumerWidget {
                   'Nó. Sem ele, nenhuma tela tem o que mostrar.',
                   style: textos.bodyMedium,
                 ),
+                // O app TENTOU subir o Nó e sabe por que não conseguiu. Não
+                // mostrar isso foi a falha desta tela no primeiro teste do
+                // conjunto: ela ofereceu o comando de desenvolvimento como se
+                // nada tivesse sido tentado, escondendo a única informação que
+                // levava à causa. Guardar o motivo do erro para si é o mesmo
+                // pecado do "ApiException 401" — só que ao contrário.
+                const _PorQueFalhou(),
                 const SizedBox(height: 20),
-                Text('Para subir:', style: textos.labelLarge),
+                Text('Para subir à mão:', style: textos.labelLarge),
                 const SizedBox(height: 8),
                 const _Comando(comando: _comando),
                 const SizedBox(height: 20),
@@ -72,6 +80,45 @@ class NodeOfflineScreen extends ConsumerWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// O que aconteceu quando tentamos subir o Nó — se é que tentamos.
+class _PorQueFalhou extends ConsumerWidget {
+  const _PorQueFalhou();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final erro = ref.watch(gerenteDoNoProvider).ultimoErro;
+    if (erro.isEmpty) return const SizedBox.shrink();
+    final cores = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: cores.errorContainer,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Tentei subir o Nó e não consegui:',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                color: cores.onErrorContainer,
+              ),
+            ),
+            const SizedBox(height: 6),
+            SelectableText(
+              erro,
+              style: TextStyle(fontSize: 12.5, color: cores.onErrorContainer),
+            ),
+          ],
         ),
       ),
     );

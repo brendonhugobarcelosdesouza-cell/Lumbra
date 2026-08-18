@@ -12,6 +12,7 @@ Fonte única de configuração do sistema. Regras:
 
 from __future__ import annotations
 
+import sys
 from functools import lru_cache
 from typing import Literal
 
@@ -102,13 +103,37 @@ class ObservabilitySettings(BaseModel):
     telemetry_enabled: bool = False
 
 
+def arquivos_de_configuracao() -> tuple[str, ...]:
+    """Onde procurar o ``.env`` — e a resposta muda se o Nó está instalado.
+
+    Rodando do repositório, ``.env`` no diretório atual é o esperado: é
+    assim que se aponta o Nó para um banco de desenvolvimento.
+
+    Instalado, isso vira uma armadilha séria. O diretório atual de um
+    aplicativo é imprevisível — é a pasta de onde o atalho foi clicado, ou
+    de onde outro programa o lançou. Aconteceu no primeiro teste real: o app
+    foi aberto de dentro do repositório, o Nó congelado leu o ``.env`` do
+    projeto e saiu chamando ``docker compose`` numa máquina onde o Docker
+    nem estava aberto. Um programa instalado não pode obedecer a um arquivo
+    que encontrou por acaso no caminho.
+
+    Congelado, então, a configuração vem de um lugar FIXO: a pasta de dados
+    do usuário, ao lado do banco e da chave.
+    """
+    if getattr(sys, "frozen", False):
+        from lumbra.shared.paths import pasta_de_dados
+
+        return (str(pasta_de_dados() / ".env"),)
+    return (".env",)
+
+
 class Settings(BaseSettings):
     """Configuração raiz do Lumbra."""
 
     model_config = SettingsConfigDict(
         env_prefix="LUMBRA_",
         env_nested_delimiter="__",
-        env_file=".env",
+        env_file=arquivos_de_configuracao(),
         env_file_encoding="utf-8",
         extra="ignore",
     )

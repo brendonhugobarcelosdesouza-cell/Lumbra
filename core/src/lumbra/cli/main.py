@@ -155,13 +155,20 @@ def _ja_configurado(chave: str) -> bool:
     """
     if chave in os.environ:
         return True
-    env = Path(".env")
-    if not env.exists():
-        return False
-    return any(
-        linha.strip().startswith(f"{chave}=")
-        for linha in env.read_text(encoding="utf-8").splitlines()
-    )
+    from lumbra.shared.config import arquivos_de_configuracao
+
+    # os MESMOS arquivos que o Settings lê: se olhássemos noutro lugar, o
+    # comando decidiria por um arquivo e a aplicação obedeceria a outro
+    for nome in arquivos_de_configuracao():
+        env = Path(nome)
+        if not env.exists():
+            continue
+        if any(
+            linha.strip().startswith(f"{chave}=")
+            for linha in env.read_text(encoding="utf-8").splitlines()
+        ):
+            return True
+    return False
 
 
 def _padrao(chave: str, valor: str) -> None:

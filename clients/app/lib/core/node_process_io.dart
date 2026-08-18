@@ -61,12 +61,20 @@ class GerenteDoNoDesktop implements GerenteDoNo {
       // sem consumir a saída, o buffer do pipe enche e o processo TRAVA. É a
       // falha clássica de sidecar, e o sintoma (fica lento e para) não parece
       // ter nada a ver com log.
-      _processo!.stdout.listen(_registrar, onError: (_) {});
-      _processo!.stderr.listen(_registrar, onError: (_) {});
+      _processo!.stdout.listen(_guardar, onError: (_) {});
+      _processo!.stderr.listen(_guardar, onError: (_) {});
       unawaited(
         _processo!.exitCode.then((codigo) {
           debugPrint('[Nó] encerrou com código $codigo');
           _processo = null;
+          // Um Nó que NASCE e morre logo depois deixava `ultimoErro` vazio:
+          // guardávamos só erros de partida. A tela de "Nó fora do ar" então
+          // fingia que nada tinha sido tentado e oferecia o comando manual —
+          // escondendo justamente a informação que levava à causa. Quem viu o
+          // motivo passar foi o log, e ninguém lê o log de um app.
+          if (codigo != 0) {
+            _erro = 'o Nó encerrou com código $codigo.\n${_ultimasLinhas()}';
+          }
         }),
       );
       _erro = '';
@@ -111,12 +119,24 @@ class GerenteDoNoDesktop implements GerenteDoNo {
   /// Sentinela: nenhum código de saída real é este.
   static const _tempoEsgotado = -999;
 
-  static void _registrar(List<int> bytes) {
-    if (!kDebugMode) return;
+  /// As últimas linhas que o Nó disse. Pequeno de propósito: só serve para
+  /// explicar uma morte, não para ser um visualizador de log.
+  final _saida = <String>[];
+
+  void _guardar(List<int> bytes) {
     // utf8.decode e não String.fromCharCodes: o segundo trata cada byte como
-    // um caractere, então "índices" virava "Ã­ndices" no log. `allowMalformed`
+    // um caractere, então "índices" virava "Ã­ndices". `allowMalformed`
     // porque log truncado no meio de um caractere não pode derrubar nada.
-    debugPrint('[Nó] ${utf8.decode(bytes, allowMalformed: true).trimRight()}');
+    final texto = utf8.decode(bytes, allowMalformed: true).trimRight();
+    if (texto.isEmpty) return;
+    if (kDebugMode) debugPrint('[Nó] $texto');
+    _saida.addAll(texto.split('\n'));
+    if (_saida.length > 40) _saida.removeRange(0, _saida.length - 40);
+  }
+
+  String _ultimasLinhas() {
+    final uteis = _saida.where((l) => l.trim().isNotEmpty).toList();
+    return uteis.length <= 8 ? uteis.join('\n') : uteis.sublist(uteis.length - 8).join('\n');
   }
 
   /// Onde procurar o Nó, em ordem de intenção.
@@ -133,7 +153,14 @@ class GerenteDoNoDesktop implements GerenteDoNo {
       '${File(Platform.resolvedExecutable).parent.path}'
       '${Platform.pathSeparator}no${Platform.pathSeparator}$_nomeDoExecutavel',
     );
-    if (aoLado.existsSync()) return _Comando(aoLado.path, argumentosDoNo, null);
+    if (aoLado.existsSync()) {
+      // o diretório de trabalho é FIXADO na pasta do Nó, e não herdado.
+      // Herdado, ele é a pasta de onde o atalho foi clicado — e o Nó
+      // passaria a obedecer a qualquer `.env` que existisse ali por acaso.
+      // Foi assim que o primeiro teste do conjunto falhou: aberto de dentro
+      // do repositório, o Nó leu o `.env` do projeto e foi chamar o Docker.
+      return _Comando(aoLado.path, argumentosDoNo, aoLado.parent.path);
+    }
 
     // 3. Desenvolvimento: sobe do diretório atual procurando o venv do
     //    repositório. Não fixamos caminho de máquina nenhuma.
