@@ -123,9 +123,27 @@ $env:LUMBRA_EVENTBUS = "memory"
 
 try {
     $exe = Join-Path $destinoNo "lumbra.exe"
+    # A porta e DEDICADA a verificacao, e conferida antes. Bater em 8000 era
+    # um furo grave: qualquer No que ja estivesse rodando respondia /health, e a
+    # prova passava sem provar nada - foi assim que um pacote foi aprovado por um
+    # No que nem era o dele. Pior, quando o No novo nao conseguia a porta, a
+    # contradicao aparecia como "o doctor diz que o banco nao esta no ar enquanto
+    # o /health responde".
+    $porta = 8137
+    $ocupada = $false
+    try {
+        $t = New-Object System.Net.Sockets.TcpClient
+        $t.Connect("127.0.0.1", $porta); $ocupada = $true; $t.Close()
+    } catch { }
+    if ($ocupada) {
+        Write-Host "A porta $porta ja esta em uso - nao consigo provar nada assim." -ForegroundColor Red
+        Write-Host "Feche o que estiver nela e rode de novo." -ForegroundColor Yellow
+        exit 1
+    }
+
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $exe
-    $psi.Arguments = "up --seguir-a-entrada"
+    $psi.Arguments = "up --seguir-a-entrada --port $porta"
     $psi.UseShellExecute = $false
     $psi.RedirectStandardInput = $true
     $psi.RedirectStandardOutput = $true
@@ -144,7 +162,7 @@ try {
     for ($i = 0; $i -lt 90; $i++) {
         Start-Sleep -Seconds 2
         try {
-            $r = Invoke-WebRequest -Uri "http://127.0.0.1:8000/health" -TimeoutSec 3 -UseBasicParsing
+            $r = Invoke-WebRequest -Uri "http://127.0.0.1:$porta/health" -TimeoutSec 3 -UseBasicParsing
             if ($r.StatusCode -eq 200) { $viva = $true; break }
         } catch { }
         if ($processo.HasExited) { break }
