@@ -34,7 +34,13 @@ if (Test-Path $exeCongelado) {
     # para o instalador e a versao ANTERIOR. Aconteceu na primeira montagem -
     # o No embalado ainda tinha o bug do .env que acabara de ser corrigido.
     $congeladoEm = (Get-Item $exeCongelado).LastWriteTime
-    $fonteMaisNova = (Get-ChildItem (Join-Path $core "src") -Recurse -File -Include *.py |
+    # 'src' E 'packaging': a primeira versao desta checagem olhava so para
+    # src, e o entrada.py - que e justamente o codigo NOVO do executavel -
+    # mora em packaging. Resultado: mudei o ponto de entrada e o script
+    # anunciou "esta em dia". Uma verificacao que cobre quase tudo da a mesma
+    # confianca de uma completa e nao entrega o mesmo.
+    $fonteMaisNova = (Get-ChildItem @((Join-Path $core "src"), (Join-Path $core "packaging")) `
+        -Recurse -File -Include *.py, *.spec |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1)
     if ($null -ne $fonteMaisNova -and $fonteMaisNova.LastWriteTime -gt $congeladoEm) {
         $motivo = "o codigo mudou depois ($($fonteMaisNova.Name))"
@@ -69,13 +75,28 @@ if (-not (Test-Path $appExe)) { throw "app nao encontrado em $appExe" }
 # 3. Juntar -----------------------------------------------------------
 $destinoNo = Join-Path $release "no"
 if (Test-Path $destinoNo) {
-    # um postgres.exe vivo aqui dentro impede a copia com "Acesso negado"
-    $presos = @(Get-CimInstance Win32_Process -Filter "Name='postgres.exe'" |
-        Where-Object { $_.ExecutablePath -like "$destinoNo*" })
-    if ($presos.Count -gt 0) {
-        Write-Host "   parando $($presos.Count) postgres.exe do pacote anterior..." -ForegroundColor Yellow
-        $presos | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-        Start-Sleep -Seconds 2
+    # Qualquer processo rodando de DENTRO do pacote segura arquivos e faz a
+    # copia falhar com "Acesso negado" - um erro que nao diz nada sobre a
+    # causa. A versao anterior matava os postgres.exe e ignorava o
+    # lumbra.exe, entao a remocao falhava mesmo assim.
+    #
+    # E deliberadamente NAO matamos mais nada: derrubar o No a forca e
+    # exatamente o golpe que estragou o banco uma vez, e um script de build
+    # nao tem o direito de fazer isso com os dados de alguem. Preferimos
+    # recusar e dizer o que fechar.
+    $ocupantes = @(Get-CimInstance Win32_Process |
+        Where-Object { $_.ExecutablePath -like "$destinoNo*" -or $_.ExecutablePath -like "$release\*" })
+    if ($ocupantes.Count -gt 0) {
+        Write-Host ""
+        Write-Host "Ha processos rodando de dentro do pacote anterior:" -ForegroundColor Red
+        $ocupantes | ForEach-Object {
+            Write-Host "   $($_.Name) (pid $($_.ProcessId))" -ForegroundColor Red
+        }
+        Write-Host ""
+        Write-Host "Feche a janela da Lumbra (e o No, se estiver num terminal)" -ForegroundColor Yellow
+        Write-Host "e rode de novo. Nao derrubo por conta propria: matar o No a" -ForegroundColor Yellow
+        Write-Host "forca e o que ja estragou o banco uma vez." -ForegroundColor Yellow
+        exit 1
     }
     Remove-Item -Recurse -Force $destinoNo
 }
