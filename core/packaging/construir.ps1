@@ -26,6 +26,24 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
+# QUAL Python esta sendo congelado decide o que entra no pacote: o
+# empacotador embala as dependencias do interpretador que o executa, nao as
+# do projeto. Rodar fora do ambiente virtual congela outro conjunto de
+# bibliotecas - e o pacote pode ficar bom, ruim ou diferente sem aviso.
+# Isto nao barra: informa, porque o resultado ainda e util e o dono da
+# maquina decide.
+$interpretador = (python -c "import sys; print(sys.executable)")
+$noVenv = $interpretador -like "*\.venv\*"
+Write-Host "   python: $interpretador"
+if (-not $noVenv) {
+    Write-Host ""
+    Write-Host "AVISO: este Python nao e o do ambiente virtual do projeto." -ForegroundColor Yellow
+    Write-Host "       O pacote vai levar as dependencias DELE. Para congelar" -ForegroundColor Yellow
+    Write-Host "       o mesmo conjunto que voce testa, ative o venv antes:" -ForegroundColor Yellow
+    Write-Host "       .\.venv\Scripts\Activate.ps1" -ForegroundColor Yellow
+    Write-Host ""
+}
+
 Push-Location $core
 try {
     # --noconfirm: reconstruir e o caso normal, nao a excecao
@@ -91,6 +109,29 @@ try {
     }
 
     Write-Host "   /health respondeu" -ForegroundColor Green
+
+    # /health so prova que a API subiu. As partes que vem de ARQUIVOS DE
+    # DADOS - pgvector, migracoes, indices, o modelo de embeddings - so se
+    # denunciam quando alguem pergunta por elas. E o doctor pergunta.
+    $diagnostico = (& $exe doctor --json) | ConvertFrom-Json
+    $essenciais = @("postgres", "migracoes", "indices", "embeddings")
+    $quebrados = @()
+    foreach ($nome in $essenciais) {
+        $item = $diagnostico.checks | Where-Object { $_.name -eq $nome }
+        if ($null -eq $item -or $item.status -ne "ok") {
+            $quebrados += "$nome ($($item.status)): $($item.summary)"
+        } else {
+            Write-Host "   $nome : $($item.summary)" -ForegroundColor Green
+        }
+    }
+    if ($quebrados.Count -gt 0) {
+        Write-Host ""
+        Write-Host "O pacote subiu, mas falta coisa dentro dele:" -ForegroundColor Red
+        $quebrados | ForEach-Object { Write-Host "   $_" -ForegroundColor Red }
+        Stop-Process -Id $processo.Id -Force
+        exit 1
+    }
+
     Stop-Process -Id $processo.Id -Force
     Start-Sleep -Seconds 3
     Get-Process postgres -ErrorAction SilentlyContinue |
