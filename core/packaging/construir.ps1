@@ -20,9 +20,22 @@ Write-Host "   core:  $core"
 Write-Host "   saida: $saida"
 Write-Host ""
 
-python -c "import PyInstaller" 2>$null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "PyInstaller ausente. Instale com: pip install pyinstaller" -ForegroundColor Red
+# '2>&1 | Out-Null' e nao '2>$null': com ErrorActionPreference=Stop, o
+# PowerShell 5.1 promove QUALQUER saida de erro de um programa externo a
+# excecao fatal. O traceback do teste abaixo e esperado - e a resposta
+# "nao esta instalado" - mas derrubava o script antes da mensagem amigavel.
+# A verificacao gentil virava o erro mais feio da tela.
+$temPyInstaller = $true
+try {
+    & python -c "import PyInstaller" 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { $temPyInstaller = $false }
+} catch {
+    $temPyInstaller = $false
+}
+if (-not $temPyInstaller) {
+    Write-Host "PyInstaller ausente NESTE Python." -ForegroundColor Red
+    Write-Host "Instale as dependencias de desenvolvimento:" -ForegroundColor Yellow
+    Write-Host "   pip install -e .[dev]" -ForegroundColor Yellow
     exit 1
 }
 
