@@ -55,4 +55,20 @@ def pasta_do_banco() -> Path:
     return pasta_de_dados() / "postgres"
 
 
+def pasta_de_modelos() -> Path:
+    """Onde o modelo de embeddings mora.
+
+    O padrão do ``fastembed`` é um diretório TEMPORÁRIO. Para quem desenvolve
+    é indiferente; para um aplicativo instalado é uma bomba-relógio: a
+    limpeza do Windows apaga a pasta e a próxima partida rebaixa 120 MB sem
+    dizer por quê. E um download interrompido — coisa que acontece quando o
+    Nó é morto no meio — deixa o cache pela metade, com um sintoma que não
+    ajuda ninguém: "não foi possível gerar embeddings".
+
+    Ao lado dos dados, então. É onde a pessoa sabe que as coisas dela moram,
+    e é o que o instalador pode pré-carregar um dia.
+    """
+    return pasta_de_dados() / "modelos"
+
+
 # canário anti-truncamento

@@ -76,7 +76,15 @@ class AISettings(BaseModel):
 
     embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     embedding_dim: int = 384
-    embedding_cache_dir: str | None = None  # padrão da lib se None
+    # Onde o modelo de embeddings fica guardado. ``None`` NÃO é mais "o
+    # padrão da biblioteca": o padrão do fastembed é um diretório temporário,
+    # e num aplicativo instalado isso é uma bomba-relógio — a limpeza do
+    # Windows apaga a pasta, e a próxima partida rebaixa 120 MB sem explicar
+    # por quê. Pior, um download interrompido deixa o cache PELA METADE, e o
+    # sintoma é "não foi possível gerar embeddings" com um aviso discreto de
+    # que os tamanhos não batem. Resolvido em ``pasta_de_modelos()``: junto
+    # dos dados, onde a pessoa sabe que as coisas dela moram.
+    embedding_cache_dir: str | None = None
 
     # chat/completions (E2-1): Ollama sempre disponível (é local); Anthropic
     # só entra como provedor se uma api_key for configurada (opt-in explícito)

@@ -28,9 +28,16 @@ class FastEmbedProvider(EmbeddingProviderPort):
         dim: int = DEFAULT_DIM,
         cache_dir: Path | None = None,
     ) -> None:
+        from lumbra.shared.paths import pasta_de_modelos
+
         self._model_name = model
         self._dim = dim
-        self._cache_dir = cache_dir
+        # Sem cache_dir explícito NÃO cai mais no padrão do fastembed, que é
+        # um diretório temporário. Ver `pasta_de_modelos`: temporário quer
+        # dizer "o sistema pode apagar", e apagar 120 MB pelas costas do
+        # usuário é ruim; pior é o download interrompido, que deixa o cache
+        # pela metade e produz "não foi possível gerar embeddings".
+        self._cache_dir = cache_dir or pasta_de_modelos()
         self._engine: Any = None  # carregamento preguiçoso (download só no 1º uso)
         self._lock = asyncio.Lock()
 
@@ -60,11 +67,42 @@ class FastEmbedProvider(EmbeddingProviderPort):
         return self._engine
 
     def _load(self) -> Any:
+        """Carrega o modelo; se o cache estiver pela metade, baixa de novo.
+
+        Download interrompido é rotina, não exceção — basta o Nó ser morto no
+        meio da primeira partida. O que o ``fastembed`` faz então é seguir
+        com os arquivos truncados e falhar depois, na hora de gerar o vetor,
+        com um "não foi possível gerar embeddings" que não menciona o
+        download. Um aviso discreto ("Local file sizes do not match the
+        metadata") é a única pista.
+
+        Sem esta cura, a busca semântica fica quebrada PARA SEMPRE naquela
+        instalação — a mesma armadilha do banco sujo, com outra roupa. E o
+        conserto é barato porque o cache é descartável por definição: nada
+        aqui é do usuário, tudo se rebaixa.
+        """
         from fastembed import TextEmbedding
 
-        if self._cache_dir is not None:
+        try:
             return TextEmbedding(self._model_name, cache_dir=str(self._cache_dir))
-        return TextEmbedding(self._model_name)
+        except Exception as exc:
+            _log.warning(
+                "modelo_local_invalido_rebaixando",
+                model=self._model_name,
+                cache=str(self._cache_dir),
+                erro=repr(exc),
+            )
+            self._descartar_cache()
+            return TextEmbedding(self._model_name, cache_dir=str(self._cache_dir))
+
+    def _descartar_cache(self) -> None:
+        import shutil
+
+        if self._cache_dir is None or not self._cache_dir.exists():
+            return
+        # apaga SÓ a pasta de modelos: ela é 100% derivada, e o usuário não
+        # tem nada dele aqui dentro
+        shutil.rmtree(self._cache_dir, ignore_errors=True)
 
     async def embed(self, texts: tuple[str, ...]) -> tuple[tuple[float, ...], ...]:
         engine = await self._ensure_loaded()
