@@ -1,8 +1,30 @@
-"""Teste da composição de runtime."""
+"""Teste da composição de runtime.
 
+Estes testes montam o Nó INTEIRO, e por isso precisam dizer em que modo —
+senão herdam o ``.env`` de quem os roda. Herdando, eles passavam na máquina
+do desenvolvedor com Docker aberto e falhavam com ele fechado, sempre pelo
+mesmo motivo: ``ConnectionRefusedError`` ao procurar um Redis que o ``.env``
+mandava usar. Um teste que muda de resultado conforme o ambiente de quem
+executa não está testando o que diz testar — e o pior é que, no CI, os
+serviços estão sempre de pé, então a falha só aparece para quem tem a
+máquina limpa. É "funciona na minha máquina" ao contrário.
+"""
+
+import pytest
 from fastapi.testclient import TestClient
 
 from lumbra.api.main import create_default_app
+from lumbra.shared.config import get_settings
+
+
+@pytest.fixture(autouse=True)
+def _sem_servicos_externos(monkeypatch):
+    """Composição in-memory, explícita. Nada de Docker para rodar isto."""
+    monkeypatch.setenv("LUMBRA_PERSISTENCE", "memory")
+    monkeypatch.setenv("LUMBRA_EVENTBUS", "memory")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 def test_default_app_protects_skills_and_serves_auth():
