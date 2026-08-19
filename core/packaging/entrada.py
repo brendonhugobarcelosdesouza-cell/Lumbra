@@ -58,24 +58,16 @@ class _Duplo:
 
 def main() -> int:
     multiprocessing.freeze_support()
-    _falar_utf8()
-    _guardar_o_que_dizemos()
+    # importado da CLI em vez de copiado: esta função já existiu AQUI e só
+    # aqui, e o resultado foi o `lumbra` do repositório — que entra por
+    # `[project.scripts]` e nunca passa por este arquivo — seguir cuspindo
+    # "produ??o" na tela de erro do app. Uma correção só vale onde ela roda.
+    from lumbra.cli.main import falar_utf8
     from lumbra.cli.main import main as cli
 
+    falar_utf8()
+    _guardar_o_que_dizemos()
     return int(cli())
-
-
-def _falar_utf8() -> None:
-    """O Nó escreve em UTF-8, sempre.
-
-    Sem isto, o Windows usa a página de código do console (cp850 por aqui) e
-    a saída chega assim: "índices" vira "Ýndices". Parece cosmético, e é
-    enganoso: o app mostra a saída do Nó como log, e um diagnóstico
-    ilegível é um diagnóstico que ninguém lê.
-    """
-    for fluxo in (sys.stdout, sys.stderr):
-        if hasattr(fluxo, "reconfigure"):
-            fluxo.reconfigure(encoding="utf-8", errors="replace")
 
 
 def _guardar_o_que_dizemos() -> None:

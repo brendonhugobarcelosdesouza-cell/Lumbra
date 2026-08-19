@@ -474,7 +474,29 @@ def _comando_init(args: argparse.Namespace) -> int:
     return asyncio.run(executar_wizard(args.host))
 
 
+def falar_utf8() -> None:
+    """O Nó escreve em UTF-8, sempre — congelado ou não.
+
+    Sem isto o Windows usa a página de código do console (cp1252/cp850 por
+    aqui) e a saída chega assim: "produção" vira "produ??o", "índices" vira
+    "Ýndices". Parece cosmético e é enganoso: o app mostra a saída do Nó como
+    diagnóstico, e diagnóstico ilegível é diagnóstico que ninguém lê.
+
+    Mora AQUI, e não no arranque do executável congelado, porque lá ele só
+    cobria um dos dois caminhos. O `lumbra` do repositório entra por
+    ``[project.scripts]``, que não passa por ``packaging/entrada.py`` — então
+    a correção existia, estava certa, e o desenvolvedor seguia vendo lixo na
+    tela. É o mesmo erro do script de build que cobria ``core/src`` e
+    esquecia ``core/packaging``: verificação incompleta engana igual à
+    ausente.
+    """
+    for fluxo in (sys.stdout, sys.stderr):
+        if hasattr(fluxo, "reconfigure"):
+            fluxo.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    falar_utf8()
     parser = construir_parser()
     args = parser.parse_args(argv)
     try:
