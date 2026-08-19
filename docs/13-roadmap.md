@@ -71,6 +71,19 @@ Python (ADR-046); instalador Windows.
 dia a dia. **Critério da meta do produto: a Lumbra vira o primeiro programa
 aberto ao ligar o computador.**
 
+> **✅ ENTREGUE.** A Lumbra instala com dois cliques (284 MB, Inno Setup),
+> aparece no menu Iniciar e abre sem Python, sem Docker e sem terminal — o
+> Nó virou executável com PostgreSQL embutido (ADR-069) e o app o sobe e o
+> encerra sozinho (ADR-071/073). Fica para depois, dentro do escopo do P2:
+> a página System Health nativa.
+>
+> O caminho custou mais do que o previsto, e vale dizer por quê: nenhuma das
+> sete falhas encontradas estava na parte "difícil" (congelar Python,
+> embutir Postgres). Todas estavam em **estados intermediários que viravam
+> permanentes** — banco interrompido que não subia mais, cache de modelo
+> pela metade, processos fantasmas segurando o desligamento, `.env` lido por
+> acaso. Ver docs/27.
+
 ### P3 — Sync Engine v1 + Android, Modo Local (~8 semanas)
 
 O épico mais difícil — por isso o escopo do sync é deliberadamente pequeno
