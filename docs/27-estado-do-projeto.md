@@ -23,7 +23,7 @@ O que **está fechado e provado**:
 | Fase A — Agentes | ✅ A0→A9, A11 | Capability Model, Orchestrator em camadas, Sandbox, delegação |
 | Fase L — Aprendizado | ✅ L1, L2 | Playbooks (memória procedural), fila de aprovações persistente |
 | P1 — Plataforma | ✅ | Contrato OpenAPI versionado, dispositivos, cliente Dart gerado |
-| P2 — Cliente Desktop | 🟡 quase | App Flutter completo; instalador é o que falta |
+| P2 — Cliente Desktop | ✅ | App, sidecar, Postgres embutido e **instalador Windows** |
 
 Números: **72 ADRs**, 11 migrações, 84 arquivos de teste no Core, 14 no app.
 
@@ -71,21 +71,24 @@ dono do computador não tinha como sair sozinho.
 
 Em ordem de dependência.
 
-### 3.1. Confirmar o conjunto (imediato)
-O app já é montado com o Nó dentro e o script prova que ele sobe do lugar
-definitivo. Falta a confirmação humana: abrir o `lumbra_app.exe` por dois
-cliques, com o banco precisando de recuperação, e ver a tela "Iniciando o
-Nó…" dar lugar à Lumbra.
+### 3.1. O assistente inventa as próprias capacidades ⚠️
+Descoberto na primeira conversa depois de instalado. Perguntada "o que você
+faz?", a Lumbra respondeu com uma lista genérica — "organização de agenda e
+lembretes", "ajuda com tarefas domésticas" — que ela **não faz**. Agenda é o
+P5, que nem começou.
 
-### 3.2. O instalador propriamente dito
-Inno Setup é o candidato: não exige conta de desenvolvedor nem assinatura.
-Entrega: atalho no Menu Iniciar, desinstalador, e a pasta `no/` ao lado do
-app. **Decisão em aberto:** o `fastembed` baixa o modelo (~120 MB) na
-primeira execução. Ou o instalador leva o modelo junto (pacote de ~370 MB,
-funciona sem internet), ou a primeira partida exige rede. Não decidi sozinho.
+O `SYSTEM_PROMPT` explica muito bem como usar o contexto e citar fontes, mas
+nunca diz o que a Lumbra **é**. O modelo preencheu o vazio. É o mesmo pecado
+que o dia inteiro foi consertando — afirmar o que não se pode sustentar —,
+agora na primeira pergunta que qualquer pessoa faz.
+
+### 3.2. A resposta escorrega para o chinês
+O `qwen2.5:7b` é um modelo chinês; em listas longas, o viés vence a
+instrução "responda em português". Reforçar no fim do prompt, onde a
+instrução pesa mais, ou trocar o modelo padrão.
 
 ### 3.3. System Health nativo
-Está no escopo do P2 e ainda vive só no Developer Console. O `doctor` já
+Estava no escopo do P2 e ainda vive só no Developer Console. O `doctor` já
 responde em JSON — falta a tela.
 
 ---
@@ -112,6 +115,15 @@ seguido de `pg_restore`, e provavelmente merece virar `lumbra importar`.
 **A prova do `montar.ps1` é mais fraca que a do `construir.ps1`.** Ela só bate
 em `/health`, sem perguntar ao `doctor` se pgvector, migrações e índices estão
 lá.
+
+**O instalador não é assinado.** O SmartScreen vai avisar até haver reputação
+ou certificado.
+
+**A pasta de dados não é escolhida na instalação.** Fica em
+`%LOCALAPPDATA%\Lumbra`, e mudar exige `LUMBRA_DATA_DIR` na mão — invisível
+para usuário comum. Quando existir a tela de Configurações, ela precisa
+**descartar** o cache do modelo em vez de copiá-lo: são links simbólicos, e
+foi assim que a mudança para o disco D falhou.
 
 **Sem `describe`, a fila de aprovações volta ao texto genérico (ADR-066).** Não
 há lint que force skills de risco a explicarem seu próprio pedido.
