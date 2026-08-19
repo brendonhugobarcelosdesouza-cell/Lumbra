@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumbra_api/api.dart';
+import 'package:lumbra_app/core/node_process.dart';
 import 'package:lumbra_app/core/node_status.dart';
 import 'package:lumbra_app/core/session.dart';
 import 'package:lumbra_app/features/approvals/approvals_providers.dart';
@@ -31,6 +32,9 @@ class NoFixo extends EstadoDoNo {
   Future<void> verificarAgora() async => pedidosDeNovaTentativa++;
 }
 
+/// Um comando plausível, que não é o desta máquina.
+const _comandoDeMentira = r'cd "C:\qualquer"; & "C:\qualquer\lumbra.exe" up';
+
 /// [assentar] existe por causa da tela de "verificando": ela mostra um
 /// CircularProgressIndicator, que anima PARA SEMPRE — e `pumpAndSettle`
 /// espera a árvore parar de animar, então estoura por timeout. Um quadro
@@ -40,11 +44,17 @@ Future<void> _montar(
   NodeState estado, {
   NoFixo? no,
   bool assentar = true,
+  String? comandoManual = _comandoDeMentira,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         nodeStateProvider.overrideWith(() => no ?? NoFixo(estado)),
+        // sobreposto porque o valor real depende do disco: ele procura o
+        // executável do Nó a partir do diretório atual. Sem isto o teste
+        // afirmaria uma coisa na máquina de quem tem o repositório e outra
+        // na integração contínua — o tipo de teste que passa sem provar.
+        comandoManualProvider.overrideWithValue(comandoManual),
         tokenStorageProvider.overrideWithValue(FakeTokenStorage()),
         conversationsProvider.overrideWith((ref) async => const <ConversationOut>[]),
         pendingApprovalsProvider.overrideWith((ref) async => const <ApprovalOut>[]),
@@ -75,8 +85,20 @@ void main() {
   testWidgets('a tela ensina o comando e deixa copiar', (tester) async {
     await _montar(tester, NodeState.foraDoAr);
     // digitar caminho longo à mão é onde o erro acontece
-    expect(find.textContaining('lumbra dev'), findsOneWidget);
+    expect(find.textContaining(_comandoDeMentira), findsOneWidget);
     expect(find.byTooltip('Copiar'), findsOneWidget);
+  });
+
+  testWidgets('sem comando conhecido, a tela não inventa um', (tester) async {
+    // o texto antigo era uma constante com o caminho da máquina de quem
+    // escreveu — e mandava rodar `dev` enquanto o app roda `up`. Instrução
+    // de socorro que leva a outro lugar é pior que nenhuma; quando não
+    // sabemos, calamos.
+    await _montar(tester, NodeState.foraDoAr, comandoManual: null);
+
+    expect(find.text('O Nó não está no ar'), findsOneWidget);
+    expect(find.text('Para subir à mão:'), findsNothing);
+    expect(find.byTooltip('Copiar'), findsNothing);
   });
 
   testWidgets('"Tentar de novo" pergunta ao Nó outra vez', (tester) async {

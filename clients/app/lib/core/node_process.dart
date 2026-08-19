@@ -58,6 +58,18 @@ abstract class GerenteDoNo {
 /// não dá para perguntar ao Nó: o caminho vem da convenção, não da rede.
 String? get caminhoDoLogDoNo => caminhoDoLogDoNoDaPlataforma;
 
+/// O comando que sobe o Nó à mão nesta máquina — `null` quando não há um.
+///
+/// É um provider, e não um getter lido direto na tela, porque o valor depende
+/// do DISCO: ele procura o executável a partir do diretório atual. Lido
+/// direto, o teste da tela passaria na máquina de quem tem o repositório
+/// clonado e falharia na integração contínua, ou pior — passaria nas duas
+/// afirmando coisas diferentes. Já pagamos por um teste que só passava por
+/// causa do ambiente de quem o rodou.
+final comandoManualProvider = Provider<String?>(
+  (ref) => comandoParaSubirAMaoDaPlataforma,
+);
+
 final gerenteDoNoProvider = Provider<GerenteDoNo>((ref) {
   final gerente = criarGerenteDoNo();
   ref.onDispose(gerente.parar);

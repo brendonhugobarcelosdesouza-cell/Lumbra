@@ -18,18 +18,21 @@ import '../../core/node_status.dart';
 class NodeOfflineScreen extends ConsumerWidget {
   const NodeOfflineScreen({super.key});
 
-  static const _comando =
-      'cd C:\\dev\\lumbra\\core; & C:\\dev\\lumbra\\.venv\\Scripts\\Activate.ps1; lumbra dev';
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cores = Theme.of(context).colorScheme;
     final textos = Theme.of(context).textTheme;
+    final comando = ref.watch(comandoManualProvider);
     return Scaffold(
+      // rolagem, e não um Column solto: esta tela CRESCE com o problema —
+      // quanto pior a falha, mais linhas de diagnóstico ela mostra. Sem
+      // rolagem, a explicação mais longa (justamente a mais necessária)
+      // empurrava o comando de socorro para fora da janela e virava a faixa
+      // amarela de estouro. A tela de erro não pode ser o próximo erro.
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 560),
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.all(32),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -51,10 +54,12 @@ class NodeOfflineScreen extends ConsumerWidget {
                 // levava à causa. Guardar o motivo do erro para si é o mesmo
                 // pecado do "ApiException 401" — só que ao contrário.
                 const _PorQueFalhou(),
-                const SizedBox(height: 20),
-                Text('Para subir à mão:', style: textos.labelLarge),
-                const SizedBox(height: 8),
-                const _Comando(comando: _comando),
+                if (comando != null) ...[
+                  const SizedBox(height: 20),
+                  Text('Para subir à mão:', style: textos.labelLarge),
+                  const SizedBox(height: 8),
+                  _Comando(comando: comando),
+                ],
                 const SizedBox(height: 20),
                 Row(
                   children: [

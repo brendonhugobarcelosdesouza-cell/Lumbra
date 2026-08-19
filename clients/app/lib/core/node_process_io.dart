@@ -31,6 +31,28 @@ String? get caminhoDoLogDoNoDaPlataforma {
   return '$base\\Lumbra\\logs\\no.log';
 }
 
+/// O comando que sobe o Nó à mão — montado a partir do executável que o app
+/// REALMENTE encontrou, nunca de um caminho escrito à mão.
+///
+/// A versão anterior era a constante `cd C:\dev\lumbra\core; ... lumbra dev`.
+/// Ela estava errada de duas formas ao mesmo tempo: só valia na máquina de
+/// quem escreveu, e mandava rodar `dev` enquanto o app roda `up` — modos
+/// diferentes, bancos diferentes (ADR-069). Uma instrução de socorro que
+/// leva a outro lugar é pior que nenhuma.
+///
+/// `null` quando não achamos o Nó: aí não há comando honesto a oferecer, e a
+/// tela simplesmente não mostra a caixa.
+String? get comandoParaSubirAMaoDaPlataforma {
+  final comando = GerenteDoNoDesktop._localizarExecutavel();
+  if (comando == null) return null;
+  final linha = '"${comando.executavel}" ${comando.argumentos.first}';
+  final dir = comando.diretorio;
+  // o diretório importa: é dele que o Nó lê o `.env`, e foi por herdar o
+  // diretório errado que um Nó já saiu chamando o Docker sem que ninguém
+  // tivesse pedido
+  return dir == null ? linha : 'cd "$dir"; & $linha';
+}
+
 /// Sobe o Nó como processo filho no desktop (ADR-046).
 ///
 /// Enquanto não existe instalador, o executável é procurado subindo o diretório
