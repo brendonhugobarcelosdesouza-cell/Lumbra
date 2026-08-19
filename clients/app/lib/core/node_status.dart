@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'api.dart';
@@ -18,7 +19,18 @@ enum NodeState {
 
   /// Não respondeu. NADA no app funciona sem isso.
   foraDoAr,
+
+  /// Nasceu, continua vivo, e passou do tempo que uma partida deveria levar.
+  /// Não é "fora do ar" — o processo existe — e não é mais "subindo", porque
+  /// a essa altura ninguém deveria seguir esperando em silêncio.
+  demorandoDemais,
 }
+
+/// Quanto tempo uma partida pode levar antes de virar suspeita.
+///
+/// Quatro minutos porque recuperar um banco interrompido no Windows passa de
+/// um; menos que isso acusaria de travado um Nó que está trabalhando.
+const _pacienciaComAPartida = Duration(minutes: 4);
 
 /// Vigia do Nó (P2-e, ADR-046).
 ///
@@ -32,6 +44,7 @@ enum NodeState {
 class EstadoDoNo extends Notifier<NodeState> {
   Timer? _relogio;
   bool _jaTentamosSubir = false;
+  DateTime? _nascendoDesde;
 
   @override
   NodeState build() {
@@ -45,6 +58,7 @@ class EstadoDoNo extends Notifier<NodeState> {
     // pedido explícito do usuário zera a desistência: se ele instalou o Nó
     // agora, merece uma nova tentativa de subir
     _jaTentamosSubir = false;
+    _nascendoDesde = null;
     return _verificar();
   }
 
@@ -64,8 +78,23 @@ class EstadoDoNo extends Notifier<NodeState> {
     final intervalo = state == NodeState.noAr
         ? const Duration(seconds: 20)
         : const Duration(seconds: 3);
+    // 'demorandoDemais' continua perguntando de 3 em 3: se o Nó finalmente
+    // subir, o app entra sozinho, sem exigir que ninguém clique em nada.
     _relogio = Timer(intervalo, _verificar);
   }
+
+  /// Só para teste: finge que a partida começou noutro momento.
+  ///
+  /// Existe porque a alternativa seria esperar quatro minutos de verdade
+  /// numa suíte que roda em segundos, ou injetar um relógio inteiro para
+  /// exercitar um `DateTime.now()`. Nomeado com `debug` para que ninguém o
+  /// use por engano em código de produção.
+  @visibleForTesting
+  void debugNasceuEm(DateTime quando) => _nascendoDesde = quando;
+
+  /// Só para teste: verifica sem zerar a contagem da partida.
+  @visibleForTesting
+  Future<void> debugVerificarSemZerar() => _verificar();
 
   /// Sobe o Nó UMA vez por sessão de fora-do-ar (ADR-046).
   ///
@@ -79,10 +108,21 @@ class EstadoDoNo extends Notifier<NodeState> {
     // linha, o vigia perguntava de novo três segundos depois, via que já
     // tinha tentado uma vez e declarava "fora do ar" — enquanto o Nó
     // trabalhava. E ele pode trabalhar bastante: recuperar um banco
-    // interrompido leva mais de meio minuto (adendo ao ADR-069). O app
-    // desistia de algo que estava dando certo e mostrava, ao lado, um
-    // comando manual que subiria um SEGUNDO Nó na mesma porta.
-    if (gerente.somosDonos) return NodeState.subindo;
+    // interrompido leva mais de meio minuto (adendo ao ADR-069).
+    //
+    // Mas COM TETO. A primeira versão desta linha não tinha, e trocou um
+    // problema por outro: o app passou a esperar para sempre, com o mesmo
+    // círculo girando, por um Nó que podia estar travado. Prometer que algo
+    // está acontecendo sem ter como saber se ainda está é tão desonesto
+    // quanto desistir cedo demais.
+    if (gerente.somosDonos) {
+      _nascendoDesde ??= DateTime.now();
+      if (DateTime.now().difference(_nascendoDesde!) < _pacienciaComAPartida) {
+        return NodeState.subindo;
+      }
+      return NodeState.demorandoDemais;
+    }
+    _nascendoDesde = null;
 
     if (_jaTentamosSubir) return NodeState.foraDoAr;
     _jaTentamosSubir = true;

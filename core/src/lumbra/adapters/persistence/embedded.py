@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -139,6 +140,38 @@ def limpar_donos_fantasmas(pasta: Path) -> int:
     return len(pids) - len(vivos)
 
 
+def _postmaster_nascendo(pasta: Path) -> bool:
+    """Há um postmaster vivo nesta pasta que ainda não terminou de subir?"""
+    try:
+        from pgserver.postgres_server import PostmasterInfo
+
+        info = PostmasterInfo.read_from_pgdata(pasta)
+    except Exception:
+        return False
+    return info is not None and info.is_running() and info.status != "ready"
+
+
+def _esperar_ficar_pronto(pasta: Path) -> bool:
+    """Espera um postmaster que já está subindo. Devolve se ficou pronto.
+
+    Não iniciamos nada aqui — de propósito. Subir um segundo servidor sobre
+    um diretório de dados que já tem dono é o caminho mais curto para
+    corromper o banco de alguém.
+    """
+    if not _postmaster_nascendo(pasta):
+        return False
+    _log.info("cluster_ja_esta_nascendo", pasta=str(pasta), esperando_s=_LIMITE_PARTIDA)
+    for _ in range(_LIMITE_PARTIDA):
+        time.sleep(1)
+        if dsn_se_estiver_no_ar(pasta) is not None:
+            _log.info("cluster_ficou_pronto", pasta=str(pasta))
+            return True
+        if not _postmaster_nascendo(pasta):
+            return False  # desistiu ou morreu: quem chamou decide o que fazer
+    _log.warning("cluster_nao_ficou_pronto_a_tempo", pasta=str(pasta))
+    return False
+
+
 def _acordar_cluster_existente(pasta: Path) -> None:
     """Sobe um banco que JÁ EXISTE, com tempo suficiente para se recuperar.
 
@@ -172,6 +205,18 @@ def _acordar_cluster_existente(pasta: Path) -> None:
         return  # não existe cluster ainda: initdb do pgserver dá conta
     if dsn_se_estiver_no_ar(pasta) is not None:
         return  # já está de pé; o pgserver vai se conectar
+
+    # ATENÇÃO à terceira possibilidade, que me escapou e custou caro: entre
+    # "no ar" e "ausente" existe "NASCENDO". Um cluster em recuperação já tem
+    # postmaster.pid, com estado `starting` em vez de `ready`. A primeira
+    # versão disto perguntava "está no ar?", ouvia não, e subia um SEGUNDO
+    # postmaster no mesmo diretório. Os dois se bloqueavam — e o
+    # `sharing violation` no ./log, que eu havia atribuído ao desenho do
+    # pgserver, era em boa parte isso: dois servidores disputando o arquivo.
+    #
+    # Quem já está nascendo não precisa de ajuda; precisa de tempo.
+    if _esperar_ficar_pronto(pasta):
+        return
     try:
         from pgserver._commands import POSTGRES_BIN_PATH
         from pgserver.utils import find_suitable_port

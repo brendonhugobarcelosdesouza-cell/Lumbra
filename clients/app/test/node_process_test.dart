@@ -121,6 +121,32 @@ void main() {
     expect(gerente.iniciadas, 1, reason: 'não pode tentar subir um segundo Nó');
   });
 
+  test('esperar não é para sempre: passa a avisar que demorou', () async {
+    // A primeira correção do bug acima não tinha teto, e trocou um problema
+    // por outro: o app girava indefinidamente por um Nó que podia estar
+    // travado. Prometer que algo está acontecendo sem ter como saber se
+    // ainda está é tão desonesto quanto desistir cedo demais.
+    final gerente = _GerenteFalso();
+    final container = ProviderContainer(
+      overrides: [
+        gerenteDoNoProvider.overrideWithValue(gerente),
+        opsApiProvider.overrideWithValue(_OpsQueNaoResponde()),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final vigia = container.read(nodeStateProvider.notifier);
+    await vigia.verificarAgora();
+    expect(container.read(nodeStateProvider), NodeState.subindo);
+
+    vigia.debugNasceuEm(DateTime.now().subtract(const Duration(minutes: 5)));
+    await vigia.debugVerificarSemZerar();
+    expect(container.read(nodeStateProvider), NodeState.demorandoDemais);
+    // e continua sendo NOSSO processo: não vira "fora do ar" nem oferece
+    // um comando que subiria um segundo Nó
+    expect(gerente.iniciadas, 1);
+  });
+
   group('o comando que o app dá ao Nó', () {
     test('é `up`, o Nó como produto — não `dev`', () {
       // Enquanto isto dizia `dev`, o caminho que o usuário percorre ignorava

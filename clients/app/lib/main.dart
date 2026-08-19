@@ -81,6 +81,10 @@ class _Raiz extends ConsumerWidget {
     // 'subindo' é espera, não erro: mostramos o que está acontecendo em vez
     // de acusar o Nó de ausente enquanto ele nasce
     if (no == NodeState.subindo) return const _Subindo();
+    // Demorando demais NÃO vira tela de erro: o Nó está vivo e pode terminar
+    // a qualquer momento. Mudamos só o que dizemos — de "aguarde" para
+    // "isto passou do normal, e aqui está onde olhar".
+    if (no == NodeState.demorandoDemais) return const _Subindo(demorado: true);
 
     final sessao = ref.watch(sessionControllerProvider);
     if (no == NodeState.verificando || (sessao.isLoading && !sessao.hasValue)) {
@@ -96,26 +100,53 @@ class _Raiz extends ConsumerWidget {
 /// carrega o modelo de embeddings e pode levar alguns segundos, e um app que
 /// só mostra um círculo nesse tempo parece travado.
 class _Subindo extends StatelessWidget {
-  const _Subindo();
+  const _Subindo({this.demorado = false});
+
+  /// Passou do tempo que uma partida deveria levar. O Nó ainda está vivo —
+  /// então continuamos esperando —, mas paramos de fingir que é normal.
+  final bool demorado;
 
   @override
   Widget build(BuildContext context) {
+    final textos = Theme.of(context).textTheme;
     return Scaffold(
       body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 20),
-            Text('Iniciando o Nó…', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 6),
-            Text(
-              'A primeira vez demora um pouco mais. Se a Lumbra foi fechada '
-              'de repente, o banco também precisa se recuperar.',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(height: 20),
+                Text(
+                  demorado ? 'O Nó está demorando mais que o normal' : 'Iniciando o Nó…',
+                  textAlign: TextAlign.center,
+                  style: textos.titleMedium,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  demorado
+                      ? 'Ele continua rodando, e o app entra sozinho se ele '
+                            'terminar. Se preferir não esperar, feche a janela '
+                            'e veja o registro:'
+                      : 'A primeira vez demora um pouco mais. Se a Lumbra foi '
+                            'fechada de repente, o banco também precisa se recuperar.',
+                  textAlign: TextAlign.center,
+                  style: textos.bodySmall,
+                ),
+                if (demorado && caminhoDoLogDoNo != null) ...[
+                  const SizedBox(height: 10),
+                  SelectableText(
+                    caminhoDoLogDoNo!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 11.5),
+                  ),
+                ],
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
