@@ -50,6 +50,37 @@ class TestSystemPrompt:
     def test_manda_admitir_quando_nao_acha(self):
         assert "não encontrou" in SYSTEM_PROMPT
 
+    def test_nao_inventa_as_proprias_capacidades(self):
+        """Encontrado no PRIMEIRO uso depois de instalada. Perguntada "o que
+        você faz?", a Lumbra listou agenda, lembretes e tarefas domésticas —
+        nada disso existe (agenda é o P5, que nem começou).
+
+        O prompt ensinava muito bem a não inventar FATOS do usuário e nunca
+        dizia o que a Lumbra É; o modelo preencheu o vazio com o repertório
+        genérico de assistente. Inventar competência é pior que inventar
+        fato: alguém pode contar com ela.
+        """
+        # quebras de linha do prompt não podem quebrar o teste: procuramos
+        # a FRASE, não a formatação dela
+        prompt = " ".join(SYSTEM_PROMPT.lower().split())
+        assert "ainda não faz" in prompt
+        # as ausências mais tentadoras para um modelo genérico
+        for ausente in ("agenda", "alarmes", "lembretes", "internet"):
+            assert ausente in prompt, f"o prompt não nega {ausente}"
+        assert "nunca descreva capacidades que você não tem" in prompt
+
+    def test_declara_o_que_a_lumbra_realmente_faz(self):
+        prompt = SYSTEM_PROMPT.lower()
+        for capacidade in ("documentos", "memórias", "procedimentos", "confirmação"):
+            assert capacidade in prompt, f"o prompt não declara {capacidade}"
+
+    def test_reforca_o_idioma_no_fim(self):
+        """O modelo local padrão (qwen2.5) é chinês e escorregou para o
+        chinês a partir do sexto item de uma lista: a instrução do topo
+        tinha perdido força. A última linha é a que mais pesa na geração."""
+        fim = " ".join(SYSTEM_PROMPT.strip().lower().split())[-200:]
+        assert "português do brasil" in fim
+
     def test_guardrail_de_valores_ambiguos(self):
         """Regressão do dogfooding: com vários 'totais' na fatura, o modelo
         chutava um número errado com confiança. O prompt deve mandar
