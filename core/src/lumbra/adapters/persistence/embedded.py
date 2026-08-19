@@ -172,6 +172,40 @@ def _esperar_ficar_pronto(pasta: Path) -> bool:
     return False
 
 
+def _rodar_pg_ctl(argumentos: list[str], *, limite: int) -> tuple[int, str]:
+    """Executa o ``pg_ctl`` sem cair na armadilha dos canos herdados.
+
+    A saída vai para ARQUIVOS TEMPORÁRIOS, e não para ``capture_output``.
+    O motivo está escrito no código do próprio ``pgserver``, que eu li e não
+    apliquei:
+
+        NB: capture_output=True ... can cause this call to hang, even with a
+        time-out depending on the command, (pg_ctl) so we use two temporary
+        files instead
+
+    É a explicação exata do que aconteceu: o ``pg_ctl`` termina, mas o
+    servidor que ele deixou rodando HERDA os canos de saída e nunca os
+    fecha. O ``subprocess.run`` fica esperando um fim de arquivo que não vem
+    — e o sintoma engana de um jeito perverso, porque o banco está
+    perfeitamente no ar. O log do Postgres marcava "ready to accept
+    connections" 150 MILISSEGUNDOS depois de iniciar, enquanto o Nó
+    esperava 210 segundos por um processo que já tinha acabado.
+    """
+    import tempfile
+
+    with tempfile.TemporaryFile("w+") as saida, tempfile.TemporaryFile("w+") as erro:
+        processo = subprocess.run(  # noqa: S603 - caminho vem do pacote
+            argumentos,
+            stdout=saida,
+            stderr=erro,
+            text=True,
+            timeout=limite,
+            check=False,
+        )
+        erro.seek(0)
+        return processo.returncode, erro.read()
+
+
 def _acordar_cluster_existente(pasta: Path) -> None:
     """Sobe um banco que JÁ EXISTE, com tempo suficiente para se recuperar.
 
@@ -226,7 +260,7 @@ def _acordar_cluster_existente(pasta: Path) -> None:
         executavel = POSTGRES_BIN_PATH / ("pg_ctl.exe" if os.name == "nt" else "pg_ctl")
         porta = find_suitable_port("127.0.0.1")
         _log.info("acordando_cluster_existente", pasta=str(pasta), limite_s=_LIMITE_PARTIDA)
-        resultado = subprocess.run(  # noqa: S603 - caminho vem do pacote
+        codigo, erro = _rodar_pg_ctl(
             [
                 str(executavel),
                 "-D",
@@ -242,18 +276,13 @@ def _acordar_cluster_existente(pasta: Path) -> None:
                 str(registro),
                 "start",
             ],
-            capture_output=True,
-            text=True,
-            timeout=_LIMITE_PARTIDA + 30,
-            check=False,
+            limite=_LIMITE_PARTIDA + 30,
         )
     except Exception as exc:  # deixa o pgserver tentar e falhar com a mensagem dele
         _log.warning("nao_consegui_acordar_o_cluster", pasta=str(pasta), erro=repr(exc))
         return
-    if resultado.returncode != 0:
-        _log.warning(
-            "cluster_nao_acordou", pasta=str(pasta), saida=(resultado.stderr or "").strip()[:400]
-        )
+    if codigo != 0:
+        _log.warning("cluster_nao_acordou", pasta=str(pasta), saida=erro.strip()[:400])
 
 
 # 180s porque a recuperação de um cluster interrompido no Windows passa
@@ -358,20 +387,15 @@ def _desligar_postmaster(pasta: Path) -> bool:
         from pgserver._commands import POSTGRES_BIN_PATH
 
         executavel = POSTGRES_BIN_PATH / ("pg_ctl.exe" if os.name == "nt" else "pg_ctl")
-        resultado = subprocess.run(  # noqa: S603 - caminho vem do pacote, não do usuário
+        codigo, erro = _rodar_pg_ctl(
             [str(executavel), "-D", str(pasta), "-w", "-t", "60", "-m", "fast", "stop"],
-            capture_output=True,
-            text=True,
-            timeout=90,
-            check=False,
+            limite=90,
         )
     except Exception as exc:
         _log.warning("postmaster_nao_desligou", pasta=str(pasta), erro=repr(exc))
         return False
-    if resultado.returncode != 0:
-        _log.warning(
-            "postmaster_nao_desligou", pasta=str(pasta), saida=resultado.stderr.strip()[:300]
-        )
+    if codigo != 0:
+        _log.warning("postmaster_nao_desligou", pasta=str(pasta), saida=erro.strip()[:300])
         return False
     _log.info("postmaster_desligado", pasta=str(pasta))
     return True

@@ -600,3 +600,14 @@ subprocess.TimeoutExpired: pg_ctl ... start' timed out after 10.0 seconds
 Dez segundos bastam para um cluster desligado com limpeza. Um cluster **interrompido** precisa de recuperação, e no Windows ela passa de trinta — porque o `pgserver` põe o arquivo de log DENTRO do diretório de dados, e a recuperação, ao fazer fsync do diretório inteiro, tromba no log que o próprio `pg_ctl` mantém aberto (`could not open file "./log": sharing violation — Continuing to retry for 30 seconds`). A soma é uma armadilha permanente: depois da primeira parada suja, **nenhuma partida futura consegue subir**, e o dono do computador não tem como sair sozinho — foi preciso rodar `pg_ctl -t 90` à mão para destravar.
 
 Por isso o Nó deixou de delegar a partida quando o cluster já existe: ele mesmo chama `pg_ctl` com limite de 180 segundos e com o log **fora** do diretório de dados, e só então pede ao `pgserver` que se conecte ao servidor que encontrou rodando. Cluster novo continua com o `pgserver` — recém-criado não tem o que recuperar. Esperar demais custa alguns segundos de "Iniciando o Nó…"; esperar de menos custa um banco que não abre nunca mais. O teste de integração mata o postmaster à força e exige que a partida seguinte funcione.
+
+**Adendo ao ADR-069 (o `pg_ctl` que "travava" com o banco no ar).** A última partida do app ficou dez minutos em "Iniciando o Nó…". O log do Postgres — que existe separado justamente porque o de dentro do diretório de dados dava conflito — mostrou o oposto do esperado:
+
+```
+20:59:38.834  database system was interrupted; last known up at ...
+20:59:38.969  database system is ready to accept connections
+```
+
+**150 milissegundos.** O banco nunca esteve travado; o `pg_ctl` é que não retornava. A causa é a armadilha clássica de canos herdados: `pg_ctl start` termina quase imediato, mas o postmaster que ele deixou rodando **herda os descritores de saída** e não os fecha nunca. Com `capture_output=True`, o `subprocess.run` espera um fim de arquivo que só chegaria quando o servidor morresse. O `pgserver` documenta isso no próprio código (`NB: capture_output=True ... can cause this call to hang ... so we use two temporary files instead`) — comentário que eu li horas antes, ao investigar outra coisa, e não apliquei.
+
+Todo `pg_ctl` passa agora por `_rodar_pg_ctl`, que redireciona para arquivos temporários; um teste garante que existe **uma única** chamada a `subprocess.run` no módulo, porque uma segunda chamada direta reintroduziria o problema em silêncio. Vale registrar o quanto este erro enganou: os seis `postgres.exe` com CPU zero, que li como "bloqueados", eram um servidor pronto e ocioso; a espera de 210 segundos era o meu limite, não o do banco; e cada correção anterior — esperar mais, esperar o cluster nascendo — atacava um sintoma real de um problema que não existia.

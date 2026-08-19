@@ -249,3 +249,43 @@ class TestModoDeExecucao:
 
 
 # canário anti-truncamento
+
+
+class TestPgCtlNaoTrava:
+    """O bug que custou uma tarde e enganou de todas as formas possíveis.
+
+    O ``pg_ctl`` termina em milissegundos, mas o servidor que ele deixou
+    rodando HERDA os canos de saída e nunca os fecha. Com ``capture_output``,
+    o ``subprocess.run`` fica esperando um fim de arquivo que não vem — e o
+    banco está o tempo todo perfeitamente no ar. O log do Postgres marcava
+    "ready to accept connections" 150 milissegundos depois de iniciar,
+    enquanto o Nó esperava 210 segundos por um processo já encerrado.
+
+    O ``pgserver`` documenta a armadilha no próprio código. Eu li o comentário
+    horas antes e não o apliquei.
+    """
+
+    def test_saida_nao_vai_para_canos(self):
+        import inspect
+
+        from lumbra.adapters.persistence import embedded
+
+        fonte = inspect.getsource(embedded._rodar_pg_ctl)
+        # só o CÓDIGO: a docstring cita a armadilha de propósito, e apanhar
+        # da própria explicação seria irônico demais
+        codigo = fonte.split('"""')[2]
+        assert "capture_output" not in codigo, "capture_output com pg_ctl TRAVA"
+        assert "TemporaryFile" in codigo
+
+    def test_todo_pg_ctl_passa_por_aqui(self):
+        """Uma segunda chamada direta reintroduziria o bug em silêncio."""
+        import inspect
+
+        from lumbra.adapters.persistence import embedded
+
+        fonte = inspect.getsource(embedded)
+        # a única chamada a subprocess.run do módulo é a de dentro do helper
+        assert fonte.count("subprocess.run(") == 1
+
+
+# canário anti-truncamento
