@@ -20,15 +20,39 @@ Write-Host ""
 Write-Host "== Lumbra: gerando o instalador ==" -ForegroundColor Cyan
 
 # 1. O compilador --------------------------------------------------------
+# PERGUNTAMOS ao Windows onde ele esta, em vez de adivinhar a pasta. A
+# primeira versao chutava "Program Files\Inno Setup 6" e dizia "nao
+# encontrado" numa maquina onde ele ESTAVA instalado: o winget instala por
+# USUARIO, em AppData\Local\Programs, e a versao no nome da pasta muda a
+# cada major. Chutar caminho funciona ate a primeira maquina diferente --
+# licao que este projeto ja aprendeu com o .env, com as migracoes e com a
+# pasta de dados.
 $iscc = $null
-foreach ($caminho in @(
-    "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
-    "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
-)) {
-    if (Test-Path $caminho) { $iscc = $caminho; break }
+$chaves = @(
+    "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+    "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+    "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+)
+$registrado = Get-ItemProperty $chaves -ErrorAction SilentlyContinue |
+    Where-Object { $_.DisplayName -like "*Inno Setup*" -and $_.InstallLocation } |
+    Select-Object -First 1
+if ($null -ne $registrado) {
+    $candidato = Join-Path $registrado.InstallLocation "ISCC.exe"
+    if (Test-Path $candidato) { $iscc = $candidato }
 }
 if ($null -eq $iscc) {
     $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+}
+if ($null -eq $iscc) {
+    # ultimo recurso: os lugares habituais, por usuario E por maquina
+    foreach ($padrao in @(
+        "$env:LOCALAPPDATA\Programs\Inno Setup*\ISCC.exe",
+        "${env:ProgramFiles(x86)}\Inno Setup*\ISCC.exe",
+        "$env:ProgramFiles\Inno Setup*\ISCC.exe"
+    )) {
+        $achado = Get-Item $padrao -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($achado) { $iscc = $achado.FullName; break }
+    }
 }
 if ($null -eq $iscc) {
     Write-Host "Inno Setup nao encontrado." -ForegroundColor Red
