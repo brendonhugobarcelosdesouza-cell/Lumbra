@@ -78,6 +78,36 @@ void main() {
     expect((await fake.read())?.accessToken, 'novo-access');
   });
 
+  test('a renovação preserva quem está logado', () async {
+    // a renovação não passa pelo formulário de entrada, então o e-mail não
+    // vem da resposta: ele tem de ser carregado da sessão anterior. Sem isto
+    // o rodapé da barra lateral esvaziava sozinho a cada dez minutos — sinal
+    // de sessão perdida quando nada tinha se perdido.
+    final fake = FakeTokenStorage(
+      const Session(
+        accessToken: 'velho',
+        refreshToken: 'ref',
+        email: 'brendon@exemplo.com',
+      ),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        tokenStorageProvider.overrideWithValue(fake),
+        authApiProvider.overrideWithValue(FakeAuthApi()),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(sessionControllerProvider.future);
+    await container.read(sessionControllerProvider.notifier).refresh();
+
+    expect(
+      container.read(sessionControllerProvider).valueOrNull?.email,
+      'brendon@exemplo.com',
+    );
+    expect((await fake.read())?.email, 'brendon@exemplo.com');
+  });
+
   test('logout limpa o armazenamento e zera a sessão', () async {
     final fake = FakeTokenStorage(
       const Session(accessToken: 'abc', refreshToken: 'ref'),

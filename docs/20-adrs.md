@@ -625,3 +625,31 @@ Todo `pg_ctl` passa agora por `_rodar_pg_ctl`, que redireciona para arquivos tem
 **Desinstalar não apaga os dados.** Remover um programa não é consentimento para apagar o que a pessoa escreveu; o desinstalador diz onde eles estão e deixa a decisão com ela. Só os logs vão, porque são nossos. Pelo mesmo motivo, instalar por cima de um Nó em execução **pede** que o usuário feche, em vez de matar o processo (ADR-071).
 
 **Consequências.** (+) o critério do P2 deixa de depender de disciplina: a Lumbra aparece no menu Iniciar e abre com dois cliques, sem Python, sem Docker e sem terminal; (+) "abrir com o Windows" existe como opção e vem **desmarcada** — a meta é a Lumbra ser o primeiro programa aberto ao ligar o computador, mas isso se conquista, não se instala. (−) o instalador não é assinado, então o SmartScreen vai avisar até que haja reputação ou certificado; (−) a pasta de dados não é escolhida na instalação (fica em `%LOCALAPPDATA%\Lumbra`, com `LUMBRA_DATA_DIR` para quem quiser mudar) — e variável de ambiente não é resposta para usuário comum. A tela de Configurações que resolve isso fica anotada, com um cuidado descoberto no dia: mover a pasta precisa **descartar** o cache do modelo, nunca copiá-lo.
+
+**Adendo — a correção de UTF-8 cobria só um dos dois caminhos.** `packaging/entrada.py` reconfigurava a saída para UTF-8 antes de chamar a CLI, e resolvia para o executável congelado. Mas o `lumbra` do repositório entra por `[project.scripts]` direto em `lumbra.cli.main:main` e nunca passa por aquele arquivo — então quem desenvolve seguia vendo "produ??o" e "conex?o" na tela de erro do app, com a correção presente e correta no repositório. A função mudou para `lumbra/cli/main.py`, onde os dois caminhos passam, e um teste (`test_saida_utf8.py`) recusa que `entrada.py` volte a ter a própria cópia. Terceira ocorrência do mesmo padrão em dois dias: **correção parcial dá a mesma sensação de resolvido e não entrega o mesmo resultado.**
+
+---
+
+## ADR-074 — A interface é de três colunas, e o menu confessa o que ainda não existe ✅
+
+**Contexto.** Depois de instalada, a Lumbra funcionava e desagradava. As seções eram ícones espremidos numa barra de topo e abriam empilhadas — o padrão de celular esticado numa tela de 1500 px. Numa ferramenta de uso contínuo isso cobra dois preços: nunca se sabe onde se está, e voltar exige desfazer a pilha.
+
+Duas maquetes fecharam a direção. Nenhuma delas é um contrato: elas mostram agenda, tarefas, sincronização e percepções proativas, que são o P3 e o P5 — épicos que ainda não começaram.
+
+**Decisão.**
+
+**A moldura tem três colunas.** À esquerda, os LUGARES (barra lateral fixa, agrupada por intenção: "Meu sistema" é o que a Lumbra guarda de você, "Controle" é como você manda nela). No meio, a COLEÇÃO da seção atual — a lista de conversas, de documentos, de memórias. À direita, o TRABALHO. Um quarto painel, de contexto, abre sob demanda sobre o trabalho: fontes consultadas com seu score, modelo usado, custo em tokens.
+
+Esse painel não inventa dados. `CitationOut` já carrega `kind`, `ordinal`, `score`, `title`, `snippet` e `uri`; `ChatMessageOut` e `SendResponse` já carregam `model`, `provider`, `tokensIn` e `tokensOut` — inclusive no histórico, não só na mensagem recém-enviada. O que existia era o lugar errado: essa informação vivia no Developer Console, visível para quem construiu e invisível para quem usa. Numa plataforma cujo argumento é "os seus dados não saem daqui", a proveniência da resposta é parte do produto, não instrumentação.
+
+**O menu mostra seções que ainda não existem, marcadas com o selo do épico, e elas não abrem nada.** A alternativa óbvia — esconder o que não está pronto — deixa a promessa vaga; o menu com selo a deixa datada. O que não se pode fazer é o meio-termo: listar "Agenda" como se funcionasse e abrir uma tela vazia. Dois selos, duas distâncias: `em breve` é o que está na fila do P2 e chega em dias, `P5` é um épico que nem começou. Um selo só daria a "Agenda" a mesma promessa de proximidade que a "Configurações".
+
+**O rodapé diz quem está logado e onde a Lumbra está rodando, no mesmo lugar.** A promessa central do produto é que os dados não saem do computador, e promessa que só aparece no material de divulgação não é verificável. Ali ela fica no canto da tela o tempo todo, ao lado do estado real do Nó — se ele cair, o mesmo lugar que afirmava "Nó local" passa a dizer "fora do ar". O e-mail vem do formulário de entrada e não do token, porque o `sub` do JWT é um UUID: correto para o servidor, ilegível para o dono do computador.
+
+**Consequências.** (+) trocar de seção não perde mais rolagem nem rascunho (`IndexedStack`); (+) o painel de contexto transforma citação em auditoria: dá para ver de qual arquivo veio cada afirmação e com que score ele foi recuperado; (+) o menu vira o roteiro público do projeto, o que é honesto e também cobra.
+
+(−) mostrar o futuro no menu depende de uma propriedade que a atenção humana não garante — se alguém apagar um selo sem construir a tela, o clique passa a navegar para o vazio. Está preso por teste de widget (`barra_lateral_test.dart`), e não por disciplina, porque isso seria a versão em interface do assistente inventando as próprias capacidades, que já custou uma rodada inteira para consertar.
+
+(−) as maquetes prometem mais do que temos, e a tentação de construir os cartões vazios é real: um painel de "Visão geral" com agenda e percepções seria bonito e mentiroso. A regra que sobrevive a esta decisão: **cartão sem dado não entra na tela**.
+
+(−) fixar conversa aparece nas maquetes e não existe no contrato (`ConversationOut` não tem `pinned`); custa migração e versão nova da API, ou vira preferência local que não sincroniza no P3. Fica em aberto.

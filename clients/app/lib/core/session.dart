@@ -10,10 +10,23 @@ import 'api.dart';
 /// O `refreshToken` é guardado para renovação futura (o access expira em
 /// minutos); a renovação automática entra num incremento posterior.
 class Session {
-  const Session({required this.accessToken, required this.refreshToken});
+  const Session({
+    required this.accessToken,
+    required this.refreshToken,
+    this.email,
+  });
 
   final String accessToken;
   final String refreshToken;
+
+  /// Quem está logado, para a interface poder dizer. Opcional de propósito:
+  /// não é credencial nem prova de nada — o que autoriza é o token.
+  ///
+  /// Vem do formulário de entrada e não do token porque o `sub` do JWT é um
+  /// UUID: correto para o servidor, ilegível para o dono do computador. Uma
+  /// sessão restaurada de uma versão anterior não tem o campo, e a interface
+  /// precisa aguentar isso sem quebrar.
+  final String? email;
 }
 
 /// Onde o token descansa. Abstração para (a) usar os cofres do SO em
@@ -34,25 +47,38 @@ class SecureTokenStorage implements TokenStorage {
   final FlutterSecureStorage _storage;
   static const _kAccess = 'lumbra.access_token';
   static const _kRefresh = 'lumbra.refresh_token';
+  static const _kEmail = 'lumbra.email';
 
   @override
   Future<Session?> read() async {
     final access = await _storage.read(key: _kAccess);
     if (access == null) return null;
     final refresh = await _storage.read(key: _kRefresh) ?? '';
-    return Session(accessToken: access, refreshToken: refresh);
+    return Session(
+      accessToken: access,
+      refreshToken: refresh,
+      email: await _storage.read(key: _kEmail),
+    );
   }
 
   @override
   Future<void> save(Session session) async {
     await _storage.write(key: _kAccess, value: session.accessToken);
     await _storage.write(key: _kRefresh, value: session.refreshToken);
+    // apagar em vez de gravar nulo: chave órfã de um login antigo mostraria
+    // o dono errado depois de trocar de conta
+    if (session.email == null) {
+      await _storage.delete(key: _kEmail);
+    } else {
+      await _storage.write(key: _kEmail, value: session.email);
+    }
   }
 
   @override
   Future<void> clear() async {
     await _storage.delete(key: _kAccess);
     await _storage.delete(key: _kRefresh);
+    await _storage.delete(key: _kEmail);
   }
 }
 
@@ -82,7 +108,7 @@ class SessionController extends AsyncNotifier<Session?> {
       // /token é OAuth2 password grant: a assinatura gerada é (password,
       // username) — username é o e-mail.
       final pair = await _auth.tokenApiV1AuthTokenPost(password, email);
-      return _guardar(pair);
+      return _guardar(pair, email);
     });
     if (state.valueOrNull != null) _agendarRenovacao();
   }
@@ -94,7 +120,7 @@ class SessionController extends AsyncNotifier<Session?> {
         RegisterRequest(email: email, password: password),
       );
       final pair = await _auth.tokenApiV1AuthTokenPost(password, email);
-      return _guardar(pair);
+      return _guardar(pair, email);
     });
     if (state.valueOrNull != null) _agendarRenovacao();
   }
@@ -125,7 +151,10 @@ class SessionController extends AsyncNotifier<Session?> {
       final pair = await _auth.refreshApiV1AuthRefreshPost(
         RefreshRequest(refreshToken: atual.refreshToken),
       );
-      final nova = await _guardar(pair);
+      // a renovação não passa pelo formulário: quem está logado tem de
+      // sobreviver ao token trocado, senão o rodapé esvazia sozinho a cada
+      // dez minutos
+      final nova = await _guardar(pair, atual.email);
       state = AsyncValue.data(nova);
       _agendarRenovacao();
       return true;
@@ -145,11 +174,12 @@ class SessionController extends AsyncNotifier<Session?> {
     state = const AsyncValue.data(null);
   }
 
-  Future<Session> _guardar(TokenPair? pair) async {
+  Future<Session> _guardar(TokenPair? pair, String? email) async {
     if (pair == null) throw Exception('resposta vazia do Nó');
     final session = Session(
       accessToken: pair.accessToken,
       refreshToken: pair.refreshToken,
+      email: email,
     );
     await _storage.save(session);
     return session;

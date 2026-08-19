@@ -22,13 +22,24 @@ class LumbraTheme {
   /// A luz: âmbar quente. É a única cor viva do sistema.
   static const _luz = Color(0xFFD99A2B);
 
-  /// A penumbra: azul-ardósia profundo, quase preto, mas nunca preto puro —
-  /// preto absoluto vibra contra texto claro e cansa em uso longo.
-  static const _penumbraProfunda = Color(0xFF14161B);
-  static const _penumbra = Color(0xFF1C1F26);
+  /// A penumbra: quase preto, mas nunca preto puro — preto absoluto vibra
+  /// contra texto claro e cansa em uso longo.
+  ///
+  /// O tom saiu do azul-ardósia anterior para um neutro levemente QUENTE.
+  /// Motivo: o âmbar sobre um fundo frio brigava, e a soma dos dois lia como
+  /// sujo. Neutro quente deixa o âmbar pousar em vez de destoar.
+  static const _penumbraProfunda = Color(0xFF131417);
+  static const _penumbra = Color(0xFF191A1F);
+
+  /// Um degrau acima do fundo: barra lateral e cartões. Superfícies que se
+  /// distinguem por LUZ, não por borda, é o que separa interface acabada de
+  /// interface desenhada com traços.
+  static const _penumbraElevada = Color(0xFF17181C);
 
   /// Papel: off-white levemente quente. Branco puro é duro no claro.
-  static const _papel = Color(0xFFFAF8F5);
+  static const _papel = Color(0xFFFBFAF8);
+  static const _papelElevado = Color(0xFFF2F0EC);
+  static const _papelCartao = Color(0xFFF4F2EE);
 
   static ThemeData get claro => _montar(Brightness.light);
   static ThemeData get escuro => _montar(Brightness.dark);
@@ -43,8 +54,16 @@ class LumbraTheme {
     ).copyWith(
       primary: escuro ? _luz : const Color(0xFF8A5A12),
       surface: escuro ? _penumbraProfunda : _papel,
-      onSurface: escuro ? const Color(0xFFE6E3DD) : const Color(0xFF1B1A17),
-      outline: escuro ? const Color(0xFF3A3F49) : const Color(0xFFD6D0C6),
+      // contraste do corpo elevado: o cinza-médio de antes cansava numa
+      // interface cujo conteúdo principal é PARÁGRAFO, não rótulo
+      onSurface: escuro ? const Color(0xFFE8E6E1) : const Color(0xFF1E1C19),
+      outline: escuro ? const Color(0xFF2C2D33) : const Color(0xFFE0DCD4),
+      outlineVariant: escuro ? const Color(0xFF24252A) : const Color(0xFFE8E5DE),
+      // os degraus de superfície que a barra lateral e os cartões usam, em
+      // vez de cada tela inventar a própria cor de fundo
+      surfaceContainer: escuro ? _penumbraElevada : _papelElevado,
+      surfaceContainerLow: escuro ? _penumbra : _papelCartao,
+      surfaceContainerHigh: escuro ? const Color(0xFF24252B) : const Color(0xFFE6E1D6),
     );
 
     final base = ThemeData(colorScheme: cores, useMaterial3: true);
