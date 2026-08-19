@@ -289,3 +289,28 @@ class TestPgCtlNaoTrava:
 
 
 # canário anti-truncamento
+
+
+class TestOndeCaemOsAnexos:
+    """Instalado, anexo não pode cair dentro do programa."""
+
+    def test_do_repositorio_continua_relativo(self, monkeypatch):
+        from lumbra.shared.config import StorageSettings
+
+        monkeypatch.delattr(sys, "frozen", raising=False)
+        assert StorageSettings().attachments_dir == "./data/attachments"
+
+    def test_congelado_vai_para_a_pasta_de_dados(self, monkeypatch, tmp_path):
+        """O diretório atual do Nó instalado é a pasta onde ELE mora, que o
+        instalador põe em Program Files: sem permissão de escrita, e apagada
+        na próxima atualização. Anexo é do usuário, não do programa."""
+        from lumbra.shared.config import StorageSettings
+
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        monkeypatch.setenv("LUMBRA_DATA_DIR", str(tmp_path))
+        destino = Path(StorageSettings().attachments_dir)
+        assert destino.is_absolute()
+        assert destino.parent == tmp_path
+
+
+# canário anti-truncamento

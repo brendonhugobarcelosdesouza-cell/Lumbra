@@ -94,13 +94,33 @@ class AISettings(BaseModel):
     anthropic_chat_model: str = "claude-haiku-4-5-20251001"
 
 
+def _anexos_padrao() -> str:
+    """Onde os anexos do usuário caem quando ninguém escolheu.
+
+    Era ``./data/attachments`` — relativo ao diretório atual. No repositório
+    isso é conveniente e continua valendo. Instalado, seria um desastre
+    silencioso: o diretório atual do Nó é a pasta ONDE ELE MORA, que o
+    instalador vai colocar em ``Program Files``. Anexos iriam parar dentro do
+    programa, num lugar em que o usuário comum nem tem permissão de escrita
+    — e desapareceriam na primeira atualização, junto com a pasta antiga.
+
+    É a mesma armadilha do ``.env`` lido por acaso, e a resposta é a mesma:
+    instalado, caminho FIXO na pasta de dados; no repositório, nada muda.
+    """
+    if getattr(sys, "frozen", False):
+        from lumbra.shared.paths import pasta_de_dados
+
+        return str(pasta_de_dados() / "anexos")
+    return "./data/attachments"
+
+
 class StorageSettings(BaseModel):
     """Onde ficam os blobs do usuário (anexos de conversa, uploads).
 
     Local por padrão — arquivos pessoais não saem da máquina (princípio
     nº 14). Trocar para S3/MinIO é implementar outro ``BlobStorePort``."""
 
-    attachments_dir: str = "./data/attachments"
+    attachments_dir: str = Field(default_factory=_anexos_padrao)
 
 
 class ObservabilitySettings(BaseModel):
