@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/node_status.dart';
 import '../../core/session.dart';
+import '../agents/agents_screen.dart';
 import '../approvals/approvals_providers.dart';
 import '../approvals/approvals_screen.dart';
 import '../chat/conversations_screen.dart';
@@ -39,6 +40,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   static const _documentos = 'Documentos';
   static const _procedimentos = 'Procedimentos';
   static const _aprovacoes = 'Aprovações';
+  static const _agentes = 'Agentes';
   static const _dispositivos = 'Dispositivos';
 
   /// A ordem aqui casa com a do `IndexedStack` — as duas listas juntas
@@ -49,6 +51,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     _documentos,
     _procedimentos,
     _aprovacoes,
+    _agentes,
     _dispositivos,
   ];
 
@@ -111,12 +114,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         icone: Icons.verified_user_outlined,
         iconeAtivo: Icons.verified_user,
       ),
-      // o Nó já expõe /api/v1/agents; o que falta é a tela (P2-g.6)
       const Secao(
-        nome: 'Agentes',
+        nome: _agentes,
         icone: Icons.smart_toy_outlined,
         iconeAtivo: Icons.smart_toy,
-        selo: _emBreve,
       ),
       const Secao(
         nome: _dispositivos,
@@ -165,6 +166,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                 DocumentsScreen(),
                 PlaybooksScreen(),
                 ApprovalsScreen(),
+                AgentsScreen(),
                 DevicesScreen(),
               ],
             ),

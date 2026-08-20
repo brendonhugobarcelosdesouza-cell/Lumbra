@@ -4,6 +4,7 @@ import 'package:lumbra_api/api.dart';
 import 'package:lumbra_app/core/api.dart';
 import 'package:lumbra_app/core/node_status.dart';
 import 'package:lumbra_app/core/session.dart';
+import 'package:lumbra_app/features/agents/agents_providers.dart';
 import 'package:lumbra_app/features/approvals/approvals_providers.dart';
 import 'package:lumbra_app/features/chat/chat_providers.dart';
 import 'package:lumbra_app/features/documents/documents_providers.dart';
@@ -52,6 +53,7 @@ void main() {
           pendingApprovalsProvider.overrideWith(
             (ref) async => const <ApprovalOut>[],
           ),
+          agentsProvider.overrideWith((ref) async => const <AgentOut>[]),
           playbooksProvider.overrideWith((ref) async => const <PlaybookOut>[]),
           memoriesProvider.overrideWith((ref) async => const <MemoryItemOut>[]),
           documentsProvider.overrideWith((ref) async => const <DocumentOut>[]),
