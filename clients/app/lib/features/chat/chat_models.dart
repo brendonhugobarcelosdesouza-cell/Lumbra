@@ -14,33 +14,43 @@ class ChatBubble {
     this.citations = const [],
     this.quando,
     this.modelo,
+    this.tokensIn,
+    this.tokensOut,
   });
 
   ChatBubble.user(this.text)
     : role = BubbleRole.user,
       citations = const [],
       quando = DateTime.now(),
-      modelo = null;
+      modelo = null,
+      tokensIn = null,
+      tokensOut = null;
 
   const ChatBubble.error(this.text)
     : role = BubbleRole.error,
       citations = const [],
       quando = null,
-      modelo = null;
+      modelo = null,
+      tokensIn = null,
+      tokensOut = null;
 
   ChatBubble.fromMessage(ChatMessageOut m)
     : role = m.role == 'user' ? BubbleRole.user : BubbleRole.assistant,
       text = m.content,
       citations = m.citations,
       quando = DateTime.tryParse(m.createdAt)?.toLocal(),
-      modelo = m.model;
+      modelo = m.model,
+      tokensIn = m.tokensIn,
+      tokensOut = m.tokensOut;
 
   ChatBubble.fromResponse(SendResponse r)
     : role = BubbleRole.assistant,
       text = r.text,
       citations = r.citations,
       quando = DateTime.now(),
-      modelo = r.model;
+      modelo = r.model,
+      tokensIn = r.tokensIn,
+      tokensOut = r.tokensOut;
 
   final BubbleRole role;
   final String text;
@@ -56,6 +66,13 @@ class ChatBubble {
   /// pode ter mudado no meio da conversa — e a resposta antiga continua
   /// tendo sido escrita pelo antigo.
   final String? modelo;
+
+  /// O custo desta resposta. Vem do histórico (`tokens_in`/`tokens_out`, que
+  /// o contrato sempre teve) e do evento `done` no que acabou de chegar.
+  /// Por mensagem, e não só da última: o painel de contexto precisa poder
+  /// explicar QUALQUER resposta, não apenas a mais recente.
+  final int? tokensIn;
+  final int? tokensOut;
 
   /// As citações que a resposta REALMENTE usou: aquelas cujo número `[n]`
   /// aparece no texto. O RAG traz várias fontes ao contexto, mas o modelo

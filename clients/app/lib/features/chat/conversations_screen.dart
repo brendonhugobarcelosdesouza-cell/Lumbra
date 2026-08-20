@@ -5,6 +5,8 @@ import '../../design/tokens.dart';
 import 'chat_providers.dart';
 import 'chat_screen.dart';
 import 'coluna_de_conversas.dart';
+import 'conversa_estado.dart';
+import 'painel_de_contexto.dart';
 
 /// A seção Conversas: a lista à esquerda e a conversa aberta ao lado.
 ///
@@ -35,6 +37,9 @@ class ConversationsScreen extends ConsumerWidget {
           );
         }
 
+        final cabeOContexto = espaco.maxWidth >= Coluna.cabeOContexto;
+        final querContexto = ref.watch(painelDeContextoProvider);
+
         return Row(
           children: [
             const SizedBox(
@@ -43,6 +48,13 @@ class ConversationsScreen extends ConsumerWidget {
             ),
             VerticalDivider(width: 1, color: cores.outlineVariant),
             Expanded(child: _Painel(aberta: aberta)),
+            if (aberta != null && cabeOContexto && querContexto) ...[
+              VerticalDivider(width: 1, color: cores.outlineVariant),
+              SizedBox(
+                width: Coluna.contexto,
+                child: _Contexto(conversa: aberta.id),
+              ),
+            ],
           ],
         );
       },
@@ -68,6 +80,27 @@ class _Painel extends StatelessWidget {
       conversationId: conversa.id,
       aberta: conversa,
       aoVoltar: aoVoltar,
+    );
+  }
+}
+
+/// O painel de contexto ligado à conversa aberta.
+///
+/// Fica aqui, e não dentro do [ChatScreen], porque ele é IRMÃO da conversa e
+/// não parte dela: ocupa a altura inteira, inclusive ao lado do cabeçalho.
+/// Foi para isto que o estado da conversa saiu do widget no R1 — sem aquilo,
+/// este painel não teria como saber o que a conversa sabe.
+class _Contexto extends ConsumerWidget {
+  const _Contexto({required this.conversa});
+
+  final String conversa;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return PainelDeContexto(
+      estado: ref.watch(conversaProvider(conversa)),
+      aoFechar: () =>
+          ref.read(painelDeContextoProvider.notifier).state = false,
     );
   }
 }

@@ -6,6 +6,7 @@ import 'chat_providers.dart';
 import 'composer.dart';
 import 'conversa_estado.dart';
 import 'mensagens.dart';
+import 'painel_de_contexto.dart';
 
 /// A conversa: histórico + envio com streaming (P2-c.2). A resposta aparece
 /// token a token; as fontes chegam antes do texto e viram chips clicáveis.
@@ -104,6 +105,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           estado: estado,
           aoVoltar: widget.aoVoltar,
           aoTrocarModelo: _escolherProvedor,
+          contextoAberto: ref.watch(painelDeContextoProvider),
+          aoAlternarContexto: () {
+            final aberto = ref.read(painelDeContextoProvider.notifier);
+            aberto.state = !aberto.state;
+          },
         ),
         Divider(height: 1, color: Theme.of(context).colorScheme.outlineVariant),
         Expanded(child: _corpo(estado)),
@@ -209,11 +215,15 @@ class _Cabecalho extends StatelessWidget {
     required this.estado,
     required this.aoVoltar,
     required this.aoTrocarModelo,
+    required this.contextoAberto,
+    required this.aoAlternarContexto,
   });
 
   final EstadoDaConversa estado;
   final VoidCallback? aoVoltar;
   final VoidCallback aoTrocarModelo;
+  final bool contextoAberto;
+  final VoidCallback aoAlternarContexto;
 
   @override
   Widget build(BuildContext context) {
@@ -246,6 +256,19 @@ class _Cabecalho extends StatelessWidget {
           const SizedBox(width: Espaco.medio),
           if (estado.localApenas != null) _Procedencia(estado.localApenas!),
           const SizedBox(width: Espaco.curto),
+          IconButton(
+            tooltip: contextoAberto
+                ? 'Ocultar o contexto'
+                : 'Mostrar de onde veio a resposta',
+            iconSize: 18,
+            onPressed: aoAlternarContexto,
+            icon: Icon(
+              contextoAberto
+                  ? Icons.view_sidebar
+                  : Icons.view_sidebar_outlined,
+              color: contextoAberto ? cores.primary : cores.onSurfaceVariant,
+            ),
+          ),
           Material(
             color: cores.surfaceContainer,
             borderRadius: Raio.bordaItem,

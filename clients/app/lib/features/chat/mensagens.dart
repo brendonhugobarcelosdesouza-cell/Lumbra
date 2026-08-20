@@ -247,7 +247,7 @@ class _Fonte extends StatelessWidget {
       borderRadius: Raio.bordaSelo,
       child: InkWell(
         borderRadius: Raio.bordaSelo,
-        onTap: () => _abrir(context),
+        onTap: () => mostrarFonte(context, fonte),
         child: Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: Espaco.curto,
@@ -257,7 +257,7 @@ class _Fonte extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                _icone(fonte.kind),
+                iconeDoTipo(fonte.kind),
                 size: 12,
                 color: cores.onSurfaceVariant,
               ),
@@ -273,68 +273,82 @@ class _Fonte extends StatelessWidget {
     );
   }
 
-  static IconData _icone(String tipo) => switch (tipo) {
-    'document' => Icons.description_outlined,
-    'memory' => Icons.psychology_outlined,
-    'playbook' => Icons.menu_book_outlined,
-    _ => Icons.link,
-  };
-
   static String _rotulo(CitationOut c) {
     final titulo = c.title?.trim();
-    if (titulo == null || titulo.isEmpty) return c.kind;
+    if (titulo == null || titulo.isEmpty) return nomeDoTipo(c.kind);
     return titulo.length > 28 ? '${titulo.substring(0, 27)}…' : titulo;
   }
+}
 
-  void _abrir(BuildContext context) {
-    final cores = Theme.of(context).colorScheme;
-    showDialog<void>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text(fonte.title ?? 'Fonte [${fonte.ordinal}]'),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: Coluna.minimaDaConversa),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  // o score do RAG é o quanto esta fonte se parecia com a
-                  // pergunta. Mostrá-lo é o que separa "a Lumbra disse" de
-                  // "a Lumbra disse, e dá para conferir"
-                  fonte.score == null
-                      ? fonte.kind
-                      : '${fonte.kind} · relevância ${fonte.score!.toStringAsFixed(2)}',
-                  style: TextStyle(fontSize: 12, color: cores.onSurfaceVariant),
-                ),
-                if (fonte.snippet != null) ...[
-                  const SizedBox(height: Espaco.medio),
-                  SelectableText(fonte.snippet!),
-                ],
-                if (fonte.uri != null) ...[
-                  const SizedBox(height: Espaco.medio),
-                  SelectableText(
-                    fonte.uri!,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: cores.onSurfaceVariant,
-                    ),
-                  ),
-                ],
+/// Nome legível do tipo de fonte. Os valores de `kind` vêm do Core.
+String nomeDoTipo(String kind) => switch (kind) {
+  'document' => 'Documento',
+  'memory' => 'Memória',
+  'playbook' => 'Procedimento',
+  _ => kind,
+};
+
+IconData iconeDoTipo(String kind) => switch (kind) {
+  'document' => Icons.description_outlined,
+  'memory' => Icons.psychology_outlined,
+  'playbook' => Icons.menu_book_outlined,
+  _ => Icons.link,
+};
+
+/// Abre uma fonte: tipo, relevância, trecho e origem.
+///
+/// Público porque o chip da resposta e o cartão do painel de contexto abrem
+/// a MESMA coisa. Duas telas diferentes para a mesma fonte seriam duas
+/// versões da verdade para manter em dia.
+void mostrarFonte(BuildContext context, CitationOut fonte) {
+  final cores = Theme.of(context).colorScheme;
+  showDialog<void>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: Text(fonte.title ?? 'Fonte [${fonte.ordinal}]'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: Coluna.minimaDaConversa),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                // o score do RAG é o quanto esta fonte se parecia com a
+                // pergunta. Mostrá-lo é o que separa "a Lumbra disse" de
+                // "a Lumbra disse, e dá para conferir"
+                fonte.score == null
+                    ? nomeDoTipo(fonte.kind)
+                    : '${nomeDoTipo(fonte.kind)} · relevância '
+                          '${fonte.score!.toStringAsFixed(2)}',
+                style: TextStyle(fontSize: 12, color: cores.onSurfaceVariant),
+              ),
+              if (fonte.snippet != null) ...[
+                const SizedBox(height: Espaco.medio),
+                SelectableText(fonte.snippet!),
               ],
-            ),
+              if (fonte.uri != null) ...[
+                const SizedBox(height: Espaco.medio),
+                SelectableText(
+                  fonte.uri!,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: cores.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Fechar'),
-          ),
-        ],
       ),
-    );
-  }
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Fechar'),
+        ),
+      ],
+    ),
+  );
 }
 
 class _DeErro extends StatelessWidget {

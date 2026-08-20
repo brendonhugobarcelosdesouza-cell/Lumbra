@@ -102,6 +102,13 @@ abstract final class Coluna {
   /// A regra certa é a que o próprio widget consegue verificar: ele sabe
   /// quanto espaço tem, não sabe o tamanho da janela.
   static const cabeAColecao = colecao + minimaDaConversa;
+
+  /// A partir de quanto espaço da seção cabe TAMBÉM o painel de contexto.
+  ///
+  /// Mesma lógica, um degrau acima: o painel só entra se, depois dele, ainda
+  /// sobrar conversa legível. Ele explica a resposta — não pode espremer a
+  /// resposta que explica.
+  static const cabeOContexto = cabeAColecao + contexto;
 }
 
 /// Quando a moldura muda de forma.
