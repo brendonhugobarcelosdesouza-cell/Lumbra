@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any
 
 from lumbra.cli import console
 from lumbra.diagnostics import checks
-from lumbra.shared.config import Settings, get_settings
+from lumbra.shared.config import Settings, arquivos_de_configuracao, get_settings
 
 if TYPE_CHECKING:
     from alembic.config import Config
@@ -140,6 +140,35 @@ def _preparar_embutido() -> bool:
     return True
 
 
+def _valor_no_env(chave: str) -> str | None:
+    """O valor desta chave nos mesmos ``.env`` que o `Settings` lê.
+
+    Existe como função própria porque DOIS lugares precisam dela e os dois
+    erravam do mesmo jeito: comparar com ``f"{chave}="`` não reconhece
+    ``CHAVE = valor``, que o `python-dotenv` (usado pelo `Settings`) aceita
+    sem reclamar.
+
+    O estrago dessa divergência é silencioso e assimétrico: a aplicação
+    obedece à linha com espaços, e a CLI conclui que ela não existe. Foi
+    encontrado por um teste que eu escrevi para outra coisa.
+    """
+    for nome in arquivos_de_configuracao():
+        env = Path(nome)
+        if not env.exists():
+            continue
+        for linha in env.read_text(encoding="utf-8").splitlines():
+            crua = linha.strip()
+            if crua.startswith("#") or "=" not in crua:
+                continue
+            nome_da_chave, _, valor = crua.partition("=")
+            if nome_da_chave.strip() != chave:
+                continue
+            # aspas fora: um caminho com aspas sobrando vira uma pasta com
+            # aspas no nome, e o erro aparece muito depois, longe do `.env`
+            return valor.strip().strip('"').strip("'")
+    return None
+
+
 def _ja_configurado(chave: str) -> bool:
     """O usuário já decidiu isto — na variável de ambiente ou no ``.env``?
 
@@ -155,20 +184,7 @@ def _ja_configurado(chave: str) -> bool:
     """
     if chave in os.environ:
         return True
-    from lumbra.shared.config import arquivos_de_configuracao
-
-    # os MESMOS arquivos que o Settings lê: se olhássemos noutro lugar, o
-    # comando decidiria por um arquivo e a aplicação obedeceria a outro
-    for nome in arquivos_de_configuracao():
-        env = Path(nome)
-        if not env.exists():
-            continue
-        if any(
-            linha.strip().startswith(f"{chave}=")
-            for linha in env.read_text(encoding="utf-8").splitlines()
-        ):
-            return True
-    return False
+    return _valor_no_env(chave) is not None
 
 
 def _padrao(chave: str, valor: str) -> None:
@@ -495,8 +511,37 @@ def falar_utf8() -> None:
             fluxo.reconfigure(encoding="utf-8", errors="replace")
 
 
+def exportar_pasta_de_dados() -> None:
+    """Faz ``LUMBRA_DATA_DIR`` no ``.env`` valer, e não só no ambiente.
+
+    `pasta_de_dados()` lê a variável de `os.environ`, não das configurações —
+    e por bom motivo: ela é consultada por código de baixo nível (o servidor
+    embutido, a chave de assinatura, o cache do modelo) que não pode depender
+    do objeto `Settings`, que por sua vez depende dela para saber onde
+    procurar o `.env` quando congelado.
+
+    O efeito colateral era uma armadilha silenciosa: escrever
+    `LUMBRA_DATA_DIR=...` no `.env` não fazia NADA. O Nó subia apontando para
+    a pasta padrão sem reclamar, e a única pista era o caminho no log — que
+    ninguém lê quando tudo parece funcionar. Foi assim que um Nó de
+    desenvolvimento foi disputar o banco da Lumbra instalada.
+
+    A precedência é a esperada: quem já definiu a variável no ambiente manda,
+    porque essa é a forma mais explícita das duas.
+    """
+    if os.environ.get("LUMBRA_DATA_DIR"):
+        return
+    valor = _valor_no_env("LUMBRA_DATA_DIR")
+    if valor:
+        os.environ["LUMBRA_DATA_DIR"] = valor
+
+
 def main(argv: list[str] | None = None) -> int:
     falar_utf8()
+    # antes de qualquer coisa que toque em disco: o servidor embutido, a
+    # chave e o cache do modelo perguntam onde é a pasta de dados, e a
+    # resposta não pode mudar no meio da partida
+    exportar_pasta_de_dados()
     parser = construir_parser()
     args = parser.parse_args(argv)
     try:
