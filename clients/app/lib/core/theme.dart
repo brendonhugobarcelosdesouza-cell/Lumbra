@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../design/tokens.dart';
+
 /// A identidade visual da Lumbra — claro e escuro, um só lugar.
 ///
 /// Existe porque o app estava no tema PADRÃO do Flutter, com o roxo do
@@ -112,30 +114,36 @@ class LumbraTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: escuro ? _penumbra : Colors.white,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: Espaco.largo,
+          vertical: Espaco.medio,
+        ),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: Raio.bordaCartao,
           borderSide: BorderSide(color: cores.outline),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: Raio.bordaCartao,
           borderSide: BorderSide(color: cores.outline),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: Raio.bordaCartao,
           borderSide: BorderSide(color: cores.primary, width: 1.6),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          padding: const EdgeInsets.symmetric(
+            horizontal: Espaco.amplo,
+            vertical: Espaco.largo,
+          ),
+          shape: const RoundedRectangleBorder(borderRadius: Raio.bordaItem),
           textStyle: const TextStyle(fontWeight: FontWeight.w600),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: const RoundedRectangleBorder(borderRadius: Raio.bordaItem),
         ),
       ),
       // selo neutro: o Chip aqui é etiqueta (risco, proveniência), não botão
@@ -143,16 +151,21 @@ class LumbraTheme {
         backgroundColor: escuro ? _penumbra : const Color(0xFFF1EDE6),
         side: BorderSide(color: cores.outline),
         labelStyle: base.textTheme.labelMedium?.copyWith(color: discreto),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        shape: const RoundedRectangleBorder(borderRadius: Raio.bordaItem),
+        padding: const EdgeInsets.symmetric(
+          horizontal: Espaco.curto,
+          vertical: Espaco.micro,
+        ),
       ),
       listTileTheme: ListTileThemeData(
         iconColor: discreto,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape: const RoundedRectangleBorder(borderRadius: Raio.bordaItem),
       ),
-      snackBarTheme: SnackBarThemeData(
+      // const inteiro: nada aqui depende do esquema de cores, entao o objeto
+      // pode ser criado uma vez em vez de a cada troca de tema
+      snackBarTheme: const SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape: RoundedRectangleBorder(borderRadius: Raio.bordaItem),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: cores.primary,

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../design/tokens.dart';
+
 /// Uma seção da Lumbra na barra lateral.
 class Secao {
   const Secao({
@@ -68,7 +70,7 @@ class BarraLateral extends StatelessWidget {
   Widget build(BuildContext context) {
     final cores = Theme.of(context).colorScheme;
     return Container(
-      width: 208,
+      width: Coluna.lateral,
       color: cores.surfaceContainer,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -76,7 +78,7 @@ class BarraLateral extends StatelessWidget {
           const _Marca(),
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.only(bottom: Espaco.curto),
               children: [
                 for (final grupo in grupos.entries) ...[
                   if (grupo.key.isNotEmpty) _TituloDoGrupo(grupo.key),
@@ -93,7 +95,7 @@ class BarraLateral extends StatelessWidget {
           ),
           if (fixos.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(top: 6, bottom: 6),
+              padding: const EdgeInsets.symmetric(vertical: Espaco.curto),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -124,7 +126,7 @@ class _Marca extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 20, 18, 14),
+      padding: const EdgeInsets.fromLTRB(Espaco.largo, Espaco.amplo, Espaco.largo, Espaco.medio),
       child: Text(
         'LUMBRA',
         style: Theme.of(context).textTheme.labelLarge?.copyWith(
@@ -146,7 +148,7 @@ class _TituloDoGrupo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 16, 18, 6),
+      padding: const EdgeInsets.fromLTRB(Espaco.largo, Espaco.largo, Espaco.largo, Espaco.curto),
       child: Text(
         texto.toUpperCase(),
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -184,17 +186,17 @@ class _Item extends StatelessWidget {
         : (ativa ? cores.onSurface : cores.onSurfaceVariant);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+      padding: const EdgeInsets.symmetric(horizontal: Espaco.curto, vertical: 1),
       child: Material(
         color: ativa ? cores.surfaceContainerHigh : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: Raio.bordaItem,
         child: InkWell(
           onTap: aoTocar,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: Raio.bordaItem,
           child: Opacity(
-            opacity: futura ? 0.45 : 1,
+            opacity: futura ? Opacidade.futuro : 1,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: Espaco.medio, vertical: Espaco.curto),
               child: Row(
                 children: [
                   Icon(ativa ? secao.iconeAtivo : secao.icone, size: 17, color: cor),
@@ -236,7 +238,7 @@ class _Selo extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
       decoration: BoxDecoration(
         color: cores.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: Raio.bordaSelo,
       ),
       child: Text(
         texto,
@@ -264,7 +266,7 @@ class _Contador extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
       decoration: BoxDecoration(
         color: cores.primary,
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: Raio.pilula,
       ),
       child: Text(
         '$quantos',
