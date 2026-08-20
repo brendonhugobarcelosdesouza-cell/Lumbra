@@ -27,10 +27,24 @@ class TokenEvent extends ChatStreamEvent {
 }
 
 class DoneEvent extends ChatStreamEvent {
-  const DoneEvent({required this.messageId, required this.provider, required this.model});
+  const DoneEvent({
+    required this.messageId,
+    required this.provider,
+    required this.model,
+    this.tokensIn,
+    this.tokensOut,
+  });
+
   final String messageId;
   final String provider;
   final String model;
+
+  /// O custo da resposta. O Nó manda isto desde sempre, em
+  /// `{"usage": {"in": …, "out": …}}`, e o cliente descartava — a informação
+  /// atravessava o fio e morria no parser. Não é dado novo, é dado que
+  /// ninguém tinha ido buscar.
+  final int? tokensIn;
+  final int? tokensOut;
 }
 
 class CancelledEvent extends ChatStreamEvent {
@@ -111,10 +125,16 @@ ChatStreamEvent? _parse(String evento, String data) {
           .toList();
       return SourcesEvent(lista);
     case 'done':
+      final uso = json['usage'];
+      final custo = uso is Map<String, dynamic> ? uso : const <String, dynamic>{};
       return DoneEvent(
         messageId: json['message_id'] as String? ?? '',
         provider: json['provider'] as String? ?? '',
         model: json['model'] as String? ?? '',
+        // `num` e não `int`: JSON não distingue os dois, e um Nó que um dia
+        // mandar 12.0 não pode derrubar a leitura do stream inteiro
+        tokensIn: (custo['in'] as num?)?.toInt(),
+        tokensOut: (custo['out'] as num?)?.toInt(),
       );
     case 'cancelled':
       return CancelledEvent(partialSaved: json['partial_saved'] as bool? ?? false);
