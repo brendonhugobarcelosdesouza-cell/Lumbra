@@ -307,6 +307,41 @@ def _log_cli(mensagem: str) -> None:
     console.linha(console.cor(f"[Nó] {mensagem}", "cinza"))
 
 
+def _porta_ocupada(host: str, porta: int) -> bool:
+    """Alguém já está atendendo nesse endereço?
+
+    Perguntado ANTES de subir o banco e aplicar migrações. Sem isto, o
+    `lumbra up` fazia todo o trabalho — acordava o Postgres embutido, migrava,
+    rodava o diagnóstico — para só então tentar escutar e morrer com
+    `[Errno 10048]`. Trabalho jogado fora, e um erro que não diz o que
+    aconteceu.
+
+    E o que aconteceu quase sempre é uma coisa só, banal e fácil de dizer:
+    já existe uma Lumbra rodando neste computador.
+    """
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sonda:
+        sonda.settimeout(0.4)
+        return sonda.connect_ex((host, porta)) == 0
+
+
+def _reclamar_da_porta(host: str, porta: int) -> None:
+    console.linha(
+        console.cor(
+            f"Já há algo atendendo em {host}:{porta} — provavelmente outra Lumbra em execução.",
+            "vermelho",
+        )
+    )
+    console.linha(
+        console.cor(
+            "  como corrigir: feche a outra Lumbra (a instalada ou um "
+            "`lumbra up` noutro terminal) e tente de novo.",
+            "azul",
+        )
+    )
+
+
 def _servir(*, reload: bool, host: str, porta: int, seguir_a_entrada: bool = False) -> int:
     import uvicorn
 
@@ -363,6 +398,9 @@ def _servir(*, reload: bool, host: str, porta: int, seguir_a_entrada: bool = Fal
 
 def comando_dev(args: argparse.Namespace) -> int:
     console.titulo("Lumbra — ambiente de desenvolvimento")
+    if _porta_ocupada(args.host, args.port):
+        _reclamar_da_porta(args.host, args.port)
+        return 1
     _padrao("LUMBRA_ENVIRONMENT", "local")
     _padrao("LUMBRA_PERSISTENCE", "postgres")
     _subir_servicos()
@@ -394,6 +432,11 @@ def comando_up(args: argparse.Namespace) -> int:
     """Produção local: sem recarga automática, e sem subir se o que falta
     comprometer os dados. O que só tira uma funcionalidade vira aviso."""
     console.titulo("Lumbra — modo produção local")
+    # antes de acordar o Postgres e migrar: se a porta já está ocupada, todo
+    # esse trabalho seria descartado e o erro final não explicaria nada
+    if _porta_ocupada(args.host, args.port):
+        _reclamar_da_porta(args.host, args.port)
+        return 1
     _padrao("LUMBRA_ENVIRONMENT", "production")
     # 'embedded' por padrão porque `up` é o Nó como PRODUTO: é o que o
     # instalador vai chamar, na máquina de alguém que não tem Docker e não
