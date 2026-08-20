@@ -653,3 +653,21 @@ Esse painel não inventa dados. `CitationOut` já carrega `kind`, `ordinal`, `sc
 (−) as maquetes prometem mais do que temos, e a tentação de construir os cartões vazios é real: um painel de "Visão geral" com agenda e percepções seria bonito e mentiroso. A regra que sobrevive a esta decisão: **cartão sem dado não entra na tela**.
 
 (−) fixar conversa aparece nas maquetes e não existe no contrato (`ConversationOut` não tem `pinned`); custa migração e versão nova da API, ou vira preferência local que não sincroniza no P3. Fica em aberto.
+
+---
+
+## ADR-075 — A promessa de privacidade acompanha o caminho real da pergunta ✅
+
+**Contexto.** Descoberto usando o produto, com a interface nova. O cabeçalho da conversa mostrava o selo **Nuvem** — lido do `model_policy`, correto — e dois centímetros abaixo a Lumbra respondia *"Tudo o que sei sobre você fica aqui — nada sai deste computador"*, enquanto aquele mesmo texto atravessava a internet até a Anthropic.
+
+A frase era uma linha fixa do `SYSTEM_PROMPT`. Ela é verdadeira no modo `local_only`, que é o padrão, e falsa em `allow_cloud`.
+
+**Decisão.** O prompt do sistema passa a ser montado a partir do modo de privacidade da conversa (`prompt_do_sistema(privacy)`). No local, promete o que pode cumprir. Na nuvem, diz a verdade completa: os documentos, memórias e conversas continuam guardados no computador, **mas a pergunta, o histórico e os trechos do bloco CONTEXTO são enviados ao provedor externo** — e proíbe explicitamente afirmar o contrário.
+
+Remover a promessa falsa não bastava: quem lê "nada sai daqui" some e não vê nada no lugar decide errado do mesmo jeito. O que substitui uma afirmação falsa é a afirmação verdadeira, não o silêncio.
+
+**Consequências.** (+) a única frase do produto sobre a qual alguém decide o que pode perguntar passa a corresponder ao que acontece; (+) o teste que segura a regressão não é o da função nova e sim o de que `_build_messages` **segue** a privacidade da conversa — a função podia estar perfeita e a montagem seguir chamando a versão local, que é exatamente a desconexão que deixou a correção de UTF-8 sem efeito por um caminho inteiro (adendo do ADR-073).
+
+(−) o prompt agora tem duas variantes, e toda regra nova precisa valer nas duas; há teste percorrendo `PrivacyMode` inteiro para garantir que as defesas contra alucinação não se percam numa delas.
+
+**O que este erro ensina.** Ele só ficou visível porque duas partes do sistema que sabiam a mesma coisa passaram a mostrá-la **lado a lado**. O selo lia `model_policy`; o prompt ignorava. Enquanto a informação vivia em telas diferentes, a contradição existia e ninguém a via. Colocar duas fontes da mesma verdade no campo de visão uma da outra é um instrumento de verificação barato — e foi a interface, não o teste, que pegou este.

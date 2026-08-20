@@ -11,7 +11,9 @@ from lumbra.modules.chat import (
     _context_block,
     _title_from,
     _to_citations,
+    prompt_do_sistema,
 )
+from lumbra.ports.ai import PrivacyMode
 from lumbra.ports.context import ContextFragment
 from lumbra.ports.conversations import Message
 
@@ -136,6 +138,51 @@ class TestContextBlock:
         citations = _to_citations(fragments)
         for citation in citations:
             assert f"[{citation.ordinal}]" in block
+
+
+class TestPromessaDePrivacidade:
+    """A frase sobre privacidade tem de corresponder ao caminho real.
+
+    Descoberto usando o produto: com a conversa em `allow_cloud`, rodando no
+    Claude, a Lumbra respondeu "nada sai deste computador" — enquanto o texto
+    daquela resposta atravessava a internet até a Anthropic.
+
+    É o mesmo pecado que o prompt já foi consertado para evitar (afirmar o que
+    não se pode sustentar), agora na frase que É o argumento central do
+    produto — e a mais cara de todas, porque alguém decide o que perguntar
+    com base nela. Pior: a INTERFACE já dizia a verdade, lendo `model_policy`
+    e mostrando "Nuvem" no cabeçalho. Quem mentia era o assistente.
+    """
+
+    def test_local_promete_que_nada_sai(self):
+        prompt = prompt_do_sistema(PrivacyMode.LOCAL_ONLY)
+        assert "nada sai daqui" in prompt
+        assert "modelo LOCAL" in prompt
+
+    def test_nuvem_nao_promete_que_nada_sai(self):
+        prompt = prompt_do_sistema(PrivacyMode.ALLOW_CLOUD)
+        assert "nada sai daqui" not in prompt
+        assert "NUVEM" in prompt
+        # e diz O QUE sai: não basta remover a promessa falsa, é preciso
+        # colocar a verdade no lugar
+        assert "provedor externo" in prompt
+
+    def test_as_duas_versoes_mantem_as_regras_do_corpo(self):
+        # trocar a promessa não pode custar as defesas contra alucinação
+        for modo in PrivacyMode:
+            prompt = prompt_do_sistema(modo)
+            assert "NUNCA invente fatos pessoais" in prompt
+            assert "O QUE VOCÊ AINDA NÃO FAZ" in prompt
+            assert prompt.strip().endswith("inclusive em listas longas.")
+
+    def test_o_prompt_montado_segue_a_privacidade_da_conversa(self):
+        # o teste que pega a regressão de verdade: não basta a função estar
+        # certa se `_build_messages` seguir chamando a versão local
+        nuvem = _build_messages([_msg("user", "oi")], [], PrivacyMode.ALLOW_CLOUD)
+        assert "nada sai daqui" not in nuvem[0].content
+
+        local = _build_messages([_msg("user", "oi")], [], PrivacyMode.LOCAL_ONLY)
+        assert "nada sai daqui" in local[0].content
 
 
 class TestBuildMessages:

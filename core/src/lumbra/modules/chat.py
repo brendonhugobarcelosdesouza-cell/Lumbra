@@ -52,10 +52,29 @@ _log = get_logger("lumbra.chat")
 _HISTORY_TURNS = 10  # janela de histórico enviada ao modelo
 _MAX_FRAGMENTS = 8
 
-SYSTEM_PROMPT = """Você é a Lumbra, a inteligência pessoal deste usuário.
-Tudo o que você sabe sobre ele mora no computador dele — nada sai daqui.
+# A promessa de privacidade DEPENDE de para onde a pergunta vai, e por isso
+# não pode ser uma linha fixa no prompt.
+#
+# Descoberto usando o produto: com a conversa em `allow_cloud`, rodando no
+# Claude, a Lumbra respondeu "nada sai deste computador" — enquanto o texto
+# daquela mesma resposta atravessava a internet até a Anthropic. É o pecado
+# que esta base já consertou duas vezes (afirmar o que não se pode
+# sustentar), agora na frase que É o argumento central do produto, e a mais
+# cara de todas: alguém decide o que perguntar com base nela.
+#
+# A interface já dizia a verdade — o selo do cabeçalho lia `model_policy` e
+# mostrava "Nuvem". Quem mentia era o assistente.
+_PROMESSA_LOCAL = """Tudo o que você sabe sobre ele mora no computador dele — nada sai daqui.
+Esta conversa roda num modelo LOCAL: o texto não sai desta máquina."""
 
-Responda em português do Brasil, de forma direta e útil.
+_PROMESSA_NUVEM = """Os dados do usuário (documentos, memórias, conversas) ficam guardados no
+computador dele. Mas ESTA conversa está usando um modelo NA NUVEM: o que
+você recebe — a pergunta, o histórico e os trechos de documento do bloco
+CONTEXTO — é enviado ao provedor externo para gerar a resposta.
+Se perguntarem sobre privacidade, diga isto com franqueza. NUNCA afirme que
+nada sai do computador enquanto estiver num modelo de nuvem."""
+
+_CORPO_DO_SISTEMA = """Responda em português do Brasil, de forma direta e útil.
 
 O QUE VOCÊ SABE FAZER HOJE (e nada além disto):
 - Conversar, mantendo o histórico da conversa.
@@ -105,6 +124,23 @@ QUANDO A PERGUNTA PEDE UM VALOR E O CONTEXTO TEM VÁRIOS CANDIDATOS:
 
 RESPONDA SEMPRE EM PORTUGUÊS DO BRASIL, do começo ao fim da resposta,
 inclusive em listas longas."""
+
+
+def prompt_do_sistema(privacy: PrivacyMode) -> str:
+    """O prompt do sistema para o modo de privacidade DESTA conversa."""
+    promessa = (
+        _PROMESSA_NUVEM if privacy is PrivacyMode.ALLOW_CLOUD else _PROMESSA_LOCAL
+    )
+    return f"""Você é a Lumbra, a inteligência pessoal deste usuário.
+{promessa}
+
+{_CORPO_DO_SISTEMA}"""
+
+
+# O prompt do caminho local, que é o padrão. Mantido como constante porque é
+# o que os testes de conteúdo verificam e o que 99% das conversas usam.
+SYSTEM_PROMPT = prompt_do_sistema(PrivacyMode.LOCAL_ONLY)
+
 # A repetição do idioma no FIM não é descuido: o modelo local padrão
 # (qwen2.5) é chinês, e numa lista de oito itens ele escorregou para o
 # chinês a partir do sexto — a instrução do topo tinha perdido força. A
@@ -432,13 +468,17 @@ class ChatModule(LumbraModule):
             token.raise_if_cancelled()  # não gasta GPU se já desistiram
         history = await self._conversations.history(conversation_id, limit=_HISTORY_TURNS * 2)
         policy = conversation.model_policy
+        privacy = PrivacyMode(policy.get("privacy", PrivacyMode.LOCAL_ONLY.value))
         return _Turn(
             conversation=conversation,
             fragments=fragments,
             citations=_to_citations(fragments),
-            messages=_build_messages(history, fragments),
+            # a privacidade entra no PROMPT, e não só no roteamento: o que a
+            # Lumbra pode afirmar sobre para onde o texto vai depende de para
+            # onde ele de fato vai
+            messages=_build_messages(history, fragments, privacy),
             history_size=len(history),
-            privacy=PrivacyMode(policy.get("privacy", PrivacyMode.LOCAL_ONLY.value)),
+            privacy=privacy,
             provider=policy.get("provider"),
         )
 
@@ -836,12 +876,16 @@ def _context_block(fragments: list[ContextFragment]) -> str:
 
 
 def _build_messages(
-    history: list[Any], fragments: list[ContextFragment]
+    history: list[Any],
+    fragments: list[ContextFragment],
+    privacy: PrivacyMode = PrivacyMode.LOCAL_ONLY,
 ) -> tuple[ChatMessage, ...]:
     """System + contexto + histórico. O contexto vai como turno de sistema
     logo antes da última pergunta: fica próximo do que deve ser respondido
     e não polui os turnos anteriores."""
-    messages: list[ChatMessage] = [ChatMessage(role="system", content=SYSTEM_PROMPT)]
+    messages: list[ChatMessage] = [
+        ChatMessage(role="system", content=prompt_do_sistema(privacy))
+    ]
     previous = [m for m in history if m.role in ("user", "assistant")]
     last_user = previous[-1] if previous and previous[-1].role == "user" else None
     body = previous[:-1] if last_user is not None else previous
