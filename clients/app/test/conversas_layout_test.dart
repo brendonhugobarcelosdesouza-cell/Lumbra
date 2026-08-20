@@ -116,6 +116,42 @@ void main() {
     expect(find.byTooltip('Voltar às conversas'), findsNothing);
   });
 
+  testWidgets('com espaço de sobra, o contexto entra como terceira coluna', (
+    tester,
+  ) async {
+    // mesma classe de regra que eu já errei uma vez comparando a largura da
+    // JANELA com o espaço da SEÇÃO. Aqui ela fica presa por teste.
+    await _montar(tester, largura: Coluna.cabeOContexto + 100);
+    await tester.tap(find.text('Plano financeiro'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Contexto'), findsOneWidget);
+  });
+
+  testWidgets('sem espaço, o contexto não espreme a conversa', (tester) async {
+    // ele explica a resposta; não pode roubar a largura da resposta que
+    // explica. Um pixel abaixo do limite ele fica de fora.
+    await _montar(tester, largura: Coluna.cabeOContexto - 1);
+    await tester.tap(find.text('Plano financeiro'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Contexto'), findsNothing);
+    // e o botão que o chamaria continua na tela, para não sumir sem aviso
+    expect(find.byTooltip('Ocultar o contexto'), findsOneWidget);
+  });
+
+  testWidgets('fechar o contexto devolve a largura à conversa', (tester) async {
+    await _montar(tester, largura: Coluna.cabeOContexto + 100);
+    await tester.tap(find.text('Plano financeiro'));
+    await tester.pumpAndSettle();
+    expect(find.text('Contexto'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Fechar o contexto'));
+    await tester.pumpAndSettle();
+    expect(find.text('Contexto'), findsNothing);
+    expect(find.byTooltip('Mostrar de onde veio a resposta'), findsOneWidget);
+  });
+
   testWidgets('sem conversa nenhuma, diz isso e oferece começar', (
     tester,
   ) async {
