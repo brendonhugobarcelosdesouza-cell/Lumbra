@@ -128,9 +128,7 @@ inclusive em listas longas."""
 
 def prompt_do_sistema(privacy: PrivacyMode) -> str:
     """O prompt do sistema para o modo de privacidade DESTA conversa."""
-    promessa = (
-        _PROMESSA_NUVEM if privacy is PrivacyMode.ALLOW_CLOUD else _PROMESSA_LOCAL
-    )
+    promessa = _PROMESSA_NUVEM if privacy is PrivacyMode.ALLOW_CLOUD else _PROMESSA_LOCAL
     return f"""Você é a Lumbra, a inteligência pessoal deste usuário.
 {promessa}
 
@@ -883,9 +881,7 @@ def _build_messages(
     """System + contexto + histórico. O contexto vai como turno de sistema
     logo antes da última pergunta: fica próximo do que deve ser respondido
     e não polui os turnos anteriores."""
-    messages: list[ChatMessage] = [
-        ChatMessage(role="system", content=prompt_do_sistema(privacy))
-    ]
+    messages: list[ChatMessage] = [ChatMessage(role="system", content=prompt_do_sistema(privacy))]
     previous = [m for m in history if m.role in ("user", "assistant")]
     last_user = previous[-1] if previous and previous[-1].role == "user" else None
     body = previous[:-1] if last_user is not None else previous
