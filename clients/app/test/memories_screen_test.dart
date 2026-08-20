@@ -26,11 +26,20 @@ MemoryItemOut _memoria({
   createdAt: '2026-08-01T10:00:00Z',
 );
 
-Future<void> _montar(WidgetTester tester, List<MemoryItemOut> itens) async {
+Future<void> _montar(
+  WidgetTester tester,
+  List<MemoryItemOut> itens, {
+  String? camada,
+}) async {
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [memoriesProvider.overrideWith((ref) async => itens)],
-      child: const MaterialApp(home: MemoriesScreen()),
+      overrides: [
+        memoriesProvider.overrideWith((ref) async => itens),
+        camadaSelecionadaProvider.overrideWith((ref) => camada),
+      ],
+      // Scaffold porque a seção não traz o seu: ela vive dentro da moldura do
+      // app, e um Scaffold por tela empilharia uma segunda barra de topo
+      child: const MaterialApp(home: Scaffold(body: MemoriesScreen())),
     ),
   );
   await tester.pumpAndSettle();
@@ -68,9 +77,24 @@ void main() {
     expect(find.widgetWithText(TextButton, 'Esquecer'), findsOneWidget);
   });
 
-  testWidgets('sem memórias, a tela diz isso sem parecer erro', (tester) async {
-    await _montar(tester, const []);
+  testWidgets('numa camada vazia, diz só que aquela camada está vazia', (
+    tester,
+  ) async {
+    await _montar(tester, const [], camada: 'semantic');
     expect(find.text('Nada guardado nesta camada.'), findsOneWidget);
+  });
+
+  testWidgets('sem memória NENHUMA, explica o que vai aparecer ali', (
+    tester,
+  ) async {
+    // as duas frases dizem coisas diferentes: "esta camada está vazia" é
+    // resultado de um filtro, e "a Lumbra não sabe nada sobre você" é o
+    // estado do sistema. Usar a primeira nos dois casos faz quem só trocou de
+    // aba achar que perdeu tudo.
+    await _montar(tester, const []);
+    expect(find.text('Nada guardado nesta camada.'), findsNothing);
+    expect(find.textContaining('ainda não guardou nada'), findsOneWidget);
+    expect(find.textContaining('você pode apagar'), findsOneWidget);
   });
 
   testWidgets('o filtro oferece todas as camadas mais "Tudo"', (tester) async {

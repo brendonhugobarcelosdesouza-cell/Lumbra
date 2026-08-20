@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumbra_api/api.dart';
 
+import '../../design/secao.dart';
+import '../../design/tokens.dart';
 import 'memories_providers.dart';
 
 /// O que a Lumbra sabe sobre você — e o botão de apagar ao lado.
@@ -20,47 +22,30 @@ class MemoriesScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final memorias = ref.watch(memoriesProvider);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Memória')),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const _FiltroDeCamada(),
-              Expanded(
-                child: memorias.when(
-                  loading: () => const Center(child: CircularProgressIndicator()),
-                  error: (erro, _) => Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        'Não foi possível carregar a memória.\n$erro',
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-                  data: (lista) => lista.isEmpty
-                      ? const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(24),
-                            child: Text(
-                              'Nada guardado nesta camada.',
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        )
-                      : ListView(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                          children: [
-                            for (final m in lista) _Memoria(memoria: m),
-                          ],
-                        ),
-                ),
-              ),
-            ],
+    final atual = ref.watch(camadaSelecionadaProvider);
+    return MolduraDeSecao(
+      titulo: 'Memória',
+      abaixoDoTitulo: const _FiltroDeCamada(),
+      child: ListaAssincrona<MemoryItemOut>(
+        valor: ref.watch(memoriesProvider),
+        oQueSeria: 'a memória',
+        iconeDoVazio: Icons.psychology_outlined,
+        // a frase muda com o filtro: "nada guardado" numa camada específica
+        // é uma informação diferente de "a Lumbra ainda não sabe nada sobre
+        // você", e a segunda assusta quem só trocou de aba
+        quandoVazio: atual == null
+            ? 'A Lumbra ainda não guardou nada sobre você. O que ela aprender '
+                  'nas conversas aparece aqui — e você pode apagar.'
+            : 'Nada guardado nesta camada.',
+        aoTerConteudo: (lista) => ColunaDeLeitura(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(
+              Espaco.grande,
+              Espaco.largo,
+              Espaco.grande,
+              Espaco.enorme,
+            ),
+            children: [for (final m in lista) _Memoria(memoria: m)],
           ),
         ),
       ),
@@ -85,16 +70,24 @@ class _FiltroDeCamada extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final atual = ref.watch(camadaSelecionadaProvider);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      padding: const EdgeInsets.fromLTRB(
+        Espaco.grande,
+        Espaco.nada,
+        Espaco.grande,
+        Espaco.largo,
+      ),
       child: Wrap(
-        spacing: 8,
+        spacing: Espaco.curto,
+        runSpacing: Espaco.curto,
         children: [
           for (final entrada in camadas.entries)
             ChoiceChip(
               label: Text(entrada.value),
               selected: atual == entrada.key,
+              showCheckmark: false,
               onSelected: (_) =>
-                  ref.read(camadaSelecionadaProvider.notifier).state = entrada.key,
+                  ref.read(camadaSelecionadaProvider.notifier).state =
+                      entrada.key,
             ),
         ],
       ),
@@ -111,40 +104,45 @@ class _Memoria extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cores = Theme.of(context).colorScheme;
     final textos = Theme.of(context).textTheme;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: cores.outline),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(memoria.content, style: textos.bodyMedium),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Text(
+    return CartaoDaLumbra(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            memoria.content,
+            style: textos.bodyMedium?.copyWith(fontSize: 14, height: 1.55),
+          ),
+          const SizedBox(height: Espaco.medio),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
                   // camada, quando chegou e quantas vezes foi usada: é o que
                   // permite julgar se aquele "fato" merece continuar existindo
                   '${camadas[memoria.kind] ?? memoria.kind}'
                   ' · ${_data(memoria.createdAt)}'
                   ' · ${_usos(memoria.accessCount)}',
-                  style: textos.bodySmall,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: cores.onSurfaceVariant,
+                  ),
                 ),
-                const Spacer(),
-                TextButton.icon(
-                  onPressed: () => _esquecer(context, ref),
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  label: const Text('Esquecer'),
+              ),
+              TextButton.icon(
+                onPressed: () => _esquecer(context, ref),
+                icon: const Icon(Icons.delete_outline, size: 16),
+                label: const Text('Esquecer', style: TextStyle(fontSize: 12.5)),
+                style: TextButton.styleFrom(
+                  foregroundColor: cores.onSurfaceVariant,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: Espaco.medio,
+                    vertical: Espaco.curto,
+                  ),
                 ),
-              ],
-            ),
-          ],
-        ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -162,7 +160,9 @@ class _Memoria extends ConsumerWidget {
 
   Future<void> _esquecer(BuildContext context, WidgetRef ref) async {
     try {
-      await ref.read(memoryApiProvider).forgetApiV1MemoryMemoryIdDelete(memoria.id);
+      await ref
+          .read(memoryApiProvider)
+          .forgetApiV1MemoryMemoryIdDelete(memoria.id);
       ref.invalidate(memoriesProvider);
       if (!context.mounted) return;
       ScaffoldMessenger.of(

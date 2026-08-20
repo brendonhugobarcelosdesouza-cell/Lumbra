@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumbra_api/api.dart';
 
+import '../../design/secao.dart';
+import '../../design/tokens.dart';
 import 'playbooks_providers.dart';
 
 /// Os procedimentos que a Lumbra sabe — o quarto tipo de memória, visível.
@@ -15,35 +17,26 @@ class PlaybooksScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final playbooks = ref.watch(playbooksProvider);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Procedimentos')),
-      body: playbooks.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (erro, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(
-              'Não foi possível carregar os procedimentos.\n$erro',
-              textAlign: TextAlign.center,
+    return MolduraDeSecao(
+      titulo: 'Procedimentos',
+      child: ListaAssincrona<PlaybookOut>(
+        valor: ref.watch(playbooksProvider),
+        oQueSeria: 'os procedimentos',
+        iconeDoVazio: Icons.menu_book_outlined,
+        quandoVazio:
+            'Nenhum procedimento ainda. A Lumbra propõe um quando resolve '
+            'algo em vários passos — e só guarda depois que você aprova.',
+        aoTerConteudo: (lista) => ColunaDeLeitura(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(
+              Espaco.grande,
+              Espaco.largo,
+              Espaco.grande,
+              Espaco.enorme,
             ),
+            children: [for (final p in lista) _Procedimento(playbook: p)],
           ),
         ),
-        data: (lista) => lista.isEmpty
-            ? const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Text(
-                    'Nenhum procedimento ainda.\n'
-                    'A Lumbra propõe um quando resolve algo em vários passos.',
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              )
-            : ListView(
-                padding: const EdgeInsets.all(12),
-                children: [for (final p in lista) _Procedimento(playbook: p)],
-              ),
       ),
     );
   }
@@ -56,72 +49,116 @@ class _Procedimento extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Theme.of(context).colorScheme.outline),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: ExpansionTile(
-        // sem as bordas próprias do ExpansionTile: com o contorno do cartão,
-        // elas viravam linha dupla
-        shape: const Border(),
-        collapsedShape: const Border(),
-        title: Text(playbook.title),
-        subtitle: Text(playbook.whenToUse),
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    Chip(
-                      label: Text(_origem(playbook.origin)),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    Chip(
-                      label: Text('usado ${playbook.uses}x'),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                for (var i = 0; i < playbook.steps.length; i++)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text('${i + 1}. ${playbook.steps[i]}'),
-                  ),
-                // as armadilhas são onde mora o valor: o erro que já custou caro
-                if (playbook.pitfalls.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text('Atenção:', style: Theme.of(context).textTheme.labelLarge),
-                  for (final armadilha in playbook.pitfalls)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text('• $armadilha'),
-                    ),
-                ],
-                if (playbook.verification.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text('Como verificar: ${playbook.verification}'),
-                ],
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: () => _esquecer(context, ref),
-                    icon: const Icon(Icons.delete_outline),
-                    label: const Text('Esquecer'),
-                  ),
-                ),
-              ],
+    final cores = Theme.of(context).colorScheme;
+    final textos = Theme.of(context).textTheme;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Espaco.medio),
+      child: Material(
+        color: cores.surfaceContainerLow,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: Raio.bordaCartao,
+          side: BorderSide(color: cores.outlineVariant),
+        ),
+        child: ExpansionTile(
+          // sem as bordas próprias do ExpansionTile: com o contorno do
+          // cartão, elas viravam linha dupla
+          shape: const Border(),
+          collapsedShape: const Border(),
+          tilePadding: const EdgeInsets.symmetric(
+            horizontal: Espaco.largo,
+            vertical: Espaco.minimo,
+          ),
+          title: Text(
+            playbook.title,
+            style: textos.bodyMedium?.copyWith(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
             ),
           ),
-        ],
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: Espaco.micro),
+            child: Text(
+              playbook.whenToUse,
+              style: TextStyle(fontSize: 12, color: cores.onSurfaceVariant),
+            ),
+          ),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                Espaco.largo,
+                Espaco.nada,
+                Espaco.largo,
+                Espaco.medio,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      _Selo(_origem(playbook.origin)),
+                      const SizedBox(width: Espaco.curto),
+                      _Selo(
+                        playbook.uses == 0
+                            ? 'nunca usado'
+                            : 'usado ${playbook.uses}x',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: Espaco.largo),
+                  for (var i = 0; i < playbook.steps.length; i++)
+                    _Passo(numero: i + 1, texto: playbook.steps[i]),
+                  // as armadilhas são onde mora o valor: o erro que já
+                  // custou caro uma vez
+                  if (playbook.pitfalls.isNotEmpty) ...[
+                    const SizedBox(height: Espaco.largo),
+                    const _Rotulo('Atenção'),
+                    for (final armadilha in playbook.pitfalls)
+                      Padding(
+                        padding: const EdgeInsets.only(top: Espaco.minimo),
+                        child: Text(
+                          '• $armadilha',
+                          style: textos.bodyMedium?.copyWith(
+                            fontSize: 13,
+                            height: 1.5,
+                          ),
+                        ),
+                      ),
+                  ],
+                  if (playbook.verification.isNotEmpty) ...[
+                    const SizedBox(height: Espaco.largo),
+                    const _Rotulo('Como verificar'),
+                    Padding(
+                      padding: const EdgeInsets.only(top: Espaco.minimo),
+                      child: Text(
+                        playbook.verification,
+                        style: textos.bodyMedium?.copyWith(
+                          fontSize: 13,
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: () => _esquecer(context, ref),
+                      icon: const Icon(Icons.delete_outline, size: 16),
+                      label: const Text(
+                        'Esquecer',
+                        style: TextStyle(fontSize: 12.5),
+                      ),
+                      style: TextButton.styleFrom(
+                        foregroundColor: cores.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -156,5 +193,92 @@ class _Procedimento extends ConsumerWidget {
         context,
       ).showSnackBar(SnackBar(content: Text('Não foi possível esquecer: $e')));
     }
+  }
+}
+
+/// Etiqueta neutra: proveniência e uso. Não é botão e não deve parecer um —
+/// o `Chip` do Material tem peso de controle e convidava ao clique.
+class _Selo extends StatelessWidget {
+  const _Selo(this.texto);
+
+  final String texto;
+
+  @override
+  Widget build(BuildContext context) {
+    final cores = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Espaco.curto,
+        vertical: Espaco.micro,
+      ),
+      decoration: BoxDecoration(
+        color: cores.surfaceContainerHigh,
+        borderRadius: Raio.bordaSelo,
+      ),
+      child: Text(
+        texto,
+        style: TextStyle(fontSize: 11, color: cores.onSurfaceVariant),
+      ),
+    );
+  }
+}
+
+class _Rotulo extends StatelessWidget {
+  const _Rotulo(this.texto);
+
+  final String texto;
+
+  @override
+  Widget build(BuildContext context) {
+    final cores = Theme.of(context).colorScheme;
+    return Text(
+      texto.toUpperCase(),
+      style: TextStyle(
+        fontSize: 10,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.8,
+        color: cores.onSurfaceVariant,
+      ),
+    );
+  }
+}
+
+/// Um passo do procedimento, com o número FORA do texto.
+///
+/// Numerar dentro da string ("1. faça isso") quebra o alinhamento quando o
+/// passo ocupa duas linhas: a segunda volta para a margem e a lista deixa de
+/// se ler como lista.
+class _Passo extends StatelessWidget {
+  const _Passo({required this.numero, required this.texto});
+
+  final int numero;
+  final String texto;
+
+  @override
+  Widget build(BuildContext context) {
+    final cores = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Espaco.curto),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: Espaco.amplo,
+            child: Text(
+              '$numero.',
+              style: TextStyle(fontSize: 13, color: cores.onSurfaceVariant),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              texto,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontSize: 13, height: 1.5),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

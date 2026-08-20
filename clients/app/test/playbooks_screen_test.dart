@@ -21,7 +21,7 @@ Future<void> _montar(WidgetTester tester, List<PlaybookOut> lista) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [playbooksProvider.overrideWith((ref) async => lista)],
-      child: const MaterialApp(home: PlaybooksScreen()),
+      child: const MaterialApp(home: Scaffold(body: PlaybooksScreen())),
     ),
   );
   await tester.pumpAndSettle();
@@ -49,18 +49,21 @@ void main() {
     await tester.tap(find.text('Reindexar após mudar a extração'));
     await tester.pumpAndSettle();
 
-    expect(find.text('1. Reiniciar o Nó'), findsOneWidget);
-    expect(find.text('2. Rodar reindexar com force'), findsOneWidget);
+    // o número saiu de dentro do texto e virou coluna própria: com ele na
+    // string, um passo de duas linhas voltava para a margem e a lista
+    // deixava de se ler como lista
+    expect(find.text('1.'), findsOneWidget);
+    expect(find.text('Reiniciar o Nó'), findsOneWidget);
+    expect(find.text('2.'), findsOneWidget);
+    expect(find.text('Rodar reindexar com force'), findsOneWidget);
     // a armadilha é onde mora o valor: o erro que já custou caro
-    expect(find.text('Atenção:'), findsOneWidget);
+    expect(find.text('ATENÇÃO'), findsOneWidget);
     expect(
       find.text('• Reindexar sem reiniciar reprocessa com o código antigo'),
       findsOneWidget,
     );
-    expect(
-      find.text('Como verificar: o valor certo aparece no topo'),
-      findsOneWidget,
-    );
+    expect(find.text('COMO VERIFICAR'), findsOneWidget);
+    expect(find.text('o valor certo aparece no topo'), findsOneWidget);
   });
 
   testWidgets('a proveniência é dita em português, não no código', (
