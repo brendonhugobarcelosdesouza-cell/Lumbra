@@ -63,6 +63,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Nenhuma conversa ainda.'), findsOneWidget);
-    expect(find.text('Nova conversa'), findsOneWidget);
+    // botão redondo com "+", como na referência: o rótulo virou dica
+    expect(find.byTooltip('Nova conversa'), findsOneWidget);
+    // a janela do teste tem 800px: abaixo de Largura.media, so a lista
+    // aparece. O painel do meio e coberto em conversas_layout_test.dart,
+    // onde a largura e explicita.
   });
 }

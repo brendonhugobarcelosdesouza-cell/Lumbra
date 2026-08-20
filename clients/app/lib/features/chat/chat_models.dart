@@ -8,27 +8,54 @@ enum BubbleRole { user, assistant, error }
 /// da resposta de envio (SendResponse) num único modelo de UI. As citações
 /// são tipadas pelo contrato (CitationOut) — nada de mapa solto.
 class ChatBubble {
-  const ChatBubble(this.role, this.text, {this.citations = const []});
+  const ChatBubble(
+    this.role,
+    this.text, {
+    this.citations = const [],
+    this.quando,
+    this.modelo,
+  });
 
-  const ChatBubble.user(this.text) : role = BubbleRole.user, citations = const [];
+  ChatBubble.user(this.text)
+    : role = BubbleRole.user,
+      citations = const [],
+      quando = DateTime.now(),
+      modelo = null;
 
   const ChatBubble.error(this.text)
     : role = BubbleRole.error,
-      citations = const [];
+      citations = const [],
+      quando = null,
+      modelo = null;
 
   ChatBubble.fromMessage(ChatMessageOut m)
     : role = m.role == 'user' ? BubbleRole.user : BubbleRole.assistant,
       text = m.content,
-      citations = m.citations;
+      citations = m.citations,
+      quando = DateTime.tryParse(m.createdAt)?.toLocal(),
+      modelo = m.model;
 
   ChatBubble.fromResponse(SendResponse r)
     : role = BubbleRole.assistant,
       text = r.text,
-      citations = r.citations;
+      citations = r.citations,
+      quando = DateTime.now(),
+      modelo = r.model;
 
   final BubbleRole role;
   final String text;
   final List<CitationOut> citations;
+
+  /// Quando a mensagem existiu. Vem do Nó no histórico (`created_at`) e do
+  /// relógio local no que acabou de ser enviado. `null` só nos erros, que
+  /// são locais e não têm hora que importe.
+  final DateTime? quando;
+
+  /// Que modelo escreveu esta resposta. Vem do histórico e do evento `done`.
+  /// Mostrar isto por mensagem, e não só no topo, importa porque o modelo
+  /// pode ter mudado no meio da conversa — e a resposta antiga continua
+  /// tendo sido escrita pelo antigo.
+  final String? modelo;
 
   /// As citações que a resposta REALMENTE usou: aquelas cujo número `[n]`
   /// aparece no texto. O RAG traz várias fontes ao contexto, mas o modelo

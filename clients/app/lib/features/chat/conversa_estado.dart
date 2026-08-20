@@ -25,6 +25,7 @@ class EstadoDaConversa {
     this.erroDeCarga,
     this.titulo,
     this.provedor,
+    this.localApenas,
     this.ultimaResposta,
   });
 
@@ -41,6 +42,11 @@ class EstadoDaConversa {
 
   /// Modelo escolhido para esta conversa (`null` = o padrão do Nó).
   final String? provedor;
+
+  /// `true` em `local_only`, `false` em `allow_cloud`, `null` quando não
+  /// sabemos. Os três casos são distintos de propósito: afirmar "Local" por
+  /// falta de informação seria a pior mentira desta interface.
+  final bool? localApenas;
 
   /// O que o Nó contou sobre a última resposta: modelo, provedor e custo.
   ///
@@ -74,6 +80,7 @@ class EstadoDaConversa {
     String? erroDeCarga,
     String? titulo,
     String? provedor,
+    bool? localApenas,
     RespostaConcluida? ultimaResposta,
   }) {
     return EstadoDaConversa(
@@ -86,6 +93,7 @@ class EstadoDaConversa {
       erroDeCarga: erroDeCarga ?? this.erroDeCarga,
       titulo: titulo ?? this.titulo,
       provedor: provedor ?? this.provedor,
+      localApenas: localApenas ?? this.localApenas,
       ultimaResposta: ultimaResposta ?? this.ultimaResposta,
     );
   }
@@ -171,10 +179,16 @@ class ControladorDaConversa
     }
   }
 
-  /// Define o título vindo da lista de conversas, sem apagar um já existente.
-  void adotarTitulo(String? titulo) {
-    if (titulo == null || state.titulo != null) return;
-    state = state.com(titulo: titulo);
+  /// Adota o que a LISTA já sabia: título e política de modelo.
+  ///
+  /// Sem sobrescrever o que a conversa já descobriu por si — a lista é uma
+  /// fonte mais velha que o histórico e que a escolha do usuário.
+  void adotarDaLista({String? titulo, String? provedor, bool? localApenas}) {
+    state = state.com(
+      titulo: state.titulo ?? titulo,
+      provedor: state.provedor ?? provedor,
+      localApenas: state.localApenas ?? localApenas,
+    );
   }
 
   void enviar(String bruto) {
@@ -314,7 +328,7 @@ class ControladorDaConversa
             provider: escolha.name,
           ),
         );
-    state = state.com(provedor: escolha.name);
+    state = state.com(provedor: escolha.name, localApenas: escolha.isLocal);
   }
 
   /// Espelha o `_title_from` do Nó: espaços colapsados, 60 caracteres.

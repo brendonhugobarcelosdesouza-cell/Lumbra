@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lumbra_api/api.dart';
 
 import '../../design/tokens.dart';
-import 'chat_models.dart';
 import 'chat_providers.dart';
 import 'conversa_estado.dart';
+import 'mensagens.dart';
 
 /// A conversa: histórico + envio com streaming (P2-c.2). A resposta aparece
 /// token a token; as fontes chegam antes do texto e viram chips clicáveis.
@@ -17,10 +15,25 @@ import 'conversa_estado.dart';
 /// widget, nenhum painel irmão conseguia saber qual mensagem estava em foco,
 /// e o painel de contexto da referência depende exatamente disso.
 class ChatScreen extends ConsumerStatefulWidget {
-  const ChatScreen({super.key, required this.conversationId, this.title});
+  const ChatScreen({
+    super.key,
+    required this.conversationId,
+    this.aberta,
+    this.aoVoltar,
+  });
 
   final String conversationId;
-  final String? title;
+
+  /// O que a lista já sabia sobre esta conversa: título e política de modelo.
+  /// Chega antes do histórico e evita o cabeçalho piscar de "Conversa" para o
+  /// título de verdade.
+  final ConversaAberta? aberta;
+
+  /// Só existe na largura estreita, onde a lista de conversas cede o lugar
+  /// para a conversa. No desktop as duas convivem e voltar não quer dizer
+  /// nada — daí ser opcional em vez de um botão sempre presente e às vezes
+  /// inútil.
+  final VoidCallback? aoVoltar;
 
   @override
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
@@ -38,8 +51,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     super.initState();
     // fora do build: mexer em provider durante a construção do widget é o
     // caminho conhecido para reconstruções em cascata
+    final aberta = widget.aberta;
     WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _controlador.adotarTitulo(widget.title),
+      (_) => _controlador.adotarDaLista(
+        titulo: aberta?.titulo,
+        provedor: aberta?.provedor,
+        localApenas: aberta?.localApenas,
+      ),
     );
   }
 
@@ -75,24 +93,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     ref.listen(conversa, (_, __) => _rolarAoFim());
     final estado = ref.watch(conversa);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(estado.titulo ?? 'Conversa'),
-        actions: [
-          TextButton.icon(
-            onPressed: _escolherProvedor,
-            icon: const Icon(Icons.tune, size: 18),
-            label: Text(estado.provedor ?? 'Modelo'),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Expanded(child: _corpo(estado)),
-          const Divider(height: 1),
-          _entrada(estado),
-        ],
-      ),
+    // sem Scaffold: a conversa deixou de ser uma TELA e virou o painel do
+    // meio da moldura. Um Scaffold aqui traria uma segunda barra de topo por
+    // cima da barra lateral, que e exatamente o empilhamento que o R1 veio
+    // desfazer.
+    return Column(
+      children: [
+        _Cabecalho(
+          estado: estado,
+          aoVoltar: widget.aoVoltar,
+          aoTrocarModelo: _escolherProvedor,
+        ),
+        Divider(height: 1, color: Theme.of(context).colorScheme.outlineVariant),
+        Expanded(child: _corpo(estado)),
+        _entrada(estado),
+      ],
     );
   }
 
@@ -116,9 +131,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
     return ListView.builder(
       controller: _scroll,
-      padding: const EdgeInsets.all(Espaco.medio),
+      padding: const EdgeInsets.fromLTRB(
+        Espaco.grande,
+        Espaco.curto,
+        Espaco.grande,
+        Espaco.grande,
+      ),
       itemCount: vivas.length,
-      itemBuilder: (_, i) => _BolhaView(vivas[i]),
+      itemBuilder: (_, i) => MensagemDaConversa(vivas[i]),
     );
   }
 
@@ -210,93 +230,124 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 }
 
-class _BolhaView extends StatelessWidget {
-  const _BolhaView(this.bolha);
+/// O topo da conversa: onde se está e com que modelo se está falando.
+///
+/// O seletor de modelo diz o NOME e a PROCEDÊNCIA juntos. Numa plataforma
+/// cujo argumento é que os dados não saem do computador, saber se a pergunta
+/// vai para a máquina ou para a nuvem não é detalhe técnico — é a informação
+/// que decide o que se pode perguntar.
+///
+/// Quando não sabemos, não dizemos. O selo tem três estados e não dois:
+/// Local, Nuvem, e ausente. Mostrar "Local" por falta de informação seria a
+/// mentira mais cara que esta tela poderia contar.
+class _Cabecalho extends StatelessWidget {
+  const _Cabecalho({
+    required this.estado,
+    required this.aoVoltar,
+    required this.aoTrocarModelo,
+  });
 
-  final ChatBubble bolha;
+  final EstadoDaConversa estado;
+  final VoidCallback? aoVoltar;
+  final VoidCallback aoTrocarModelo;
 
   @override
   Widget build(BuildContext context) {
-    final tema = Theme.of(context);
-    final usuario = bolha.role == BubbleRole.user;
-    final erro = bolha.role == BubbleRole.error;
-    final cor = erro
-        ? tema.colorScheme.errorContainer
-        : usuario
-        ? tema.colorScheme.primaryContainer
-        : tema.colorScheme.secondaryContainer;
-
-    return Align(
-      alignment: usuario ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: Espaco.minimo),
-        padding: const EdgeInsets.all(Espaco.medio),
-        constraints: const BoxConstraints(maxWidth: Coluna.leitura),
-        decoration: BoxDecoration(color: cor, borderRadius: Raio.bordaCartao),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // a resposta do assistente vem em Markdown; a do usuário e os
-            // erros são texto plano (não interpretar a entrada do usuário)
-            if (bolha.role == BubbleRole.assistant)
-              MarkdownBody(data: bolha.text, selectable: true)
-            else
-              SelectableText(bolha.text),
-            if (bolha.usedCitations.isNotEmpty) ...[
-              const SizedBox(height: Espaco.curto),
-              Wrap(
-                spacing: Espaco.curto,
-                runSpacing: Espaco.curto,
-                children: [
-                  for (final c in bolha.usedCitations)
-                    ActionChip(
-                      label: Text('[${c.ordinal}] ${_rotuloCurto(c)}'),
-                      onPressed: () => _mostrarCitacao(context, c),
+    final cores = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        Espaco.curto,
+        Espaco.medio,
+        Espaco.largo,
+        Espaco.medio,
+      ),
+      child: Row(
+        children: [
+          if (aoVoltar != null)
+            IconButton(
+              tooltip: 'Voltar às conversas',
+              onPressed: aoVoltar,
+              icon: const Icon(Icons.arrow_back, size: 20),
+            )
+          else
+            const SizedBox(width: Espaco.medio),
+          Expanded(
+            child: Text(
+              estado.titulo ?? 'Conversa',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+          const SizedBox(width: Espaco.medio),
+          if (estado.localApenas != null) _Procedencia(estado.localApenas!),
+          const SizedBox(width: Espaco.curto),
+          Material(
+            color: cores.surfaceContainer,
+            borderRadius: Raio.bordaItem,
+            child: InkWell(
+              onTap: aoTrocarModelo,
+              borderRadius: Raio.bordaItem,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: Espaco.medio,
+                  vertical: Espaco.curto,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      estado.provedor ?? 'Modelo',
+                      style: TextStyle(fontSize: 12.5, color: cores.onSurface),
                     ),
-                ],
+                    const SizedBox(width: Espaco.curto),
+                    Icon(
+                      Icons.expand_more,
+                      size: 15,
+                      color: cores.onSurfaceVariant,
+                    ),
+                  ],
+                ),
               ),
-            ],
-          ],
-        ),
+            ),
+          ),
+        ],
       ),
     );
   }
+}
 
-  /// Rótulo curto da fonte: o título do documento, ou o tipo se não houver.
-  /// Faz o chip identificar a fonte, não só numerá-la.
-  String _rotuloCurto(CitationOut c) {
-    final titulo = c.title;
-    if (titulo != null && titulo.trim().isNotEmpty) {
-      final t = titulo.trim();
-      return t.length > 24 ? '${t.substring(0, 23)}…' : t;
-    }
-    return c.kind;
-  }
+/// De onde a resposta vem. Verde para local, âmbar para nuvem.
+class _Procedencia extends StatelessWidget {
+  const _Procedencia(this.local);
 
-  void _mostrarCitacao(BuildContext context, CitationOut c) {
-    showDialog<void>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text(c.title ?? 'Fonte [${c.ordinal}]'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Tipo: ${c.kind}'),
-            if (c.snippet != null) ...[
-              const SizedBox(height: Espaco.curto),
-              Text(c.snippet!),
-            ],
-            if (c.uri != null) ...[
-              const SizedBox(height: Espaco.curto),
-              Text(c.uri!, style: Theme.of(context).textTheme.bodySmall),
-            ],
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Fechar'),
+  final bool local;
+
+  @override
+  Widget build(BuildContext context) {
+    final cores = Theme.of(context).colorScheme;
+    final cor = local ? const Color(0xFF4CAF7D) : cores.primary;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Espaco.curto + 2,
+        vertical: Espaco.minimo + 1,
+      ),
+      decoration: BoxDecoration(
+        color: cores.surfaceContainer,
+        borderRadius: Raio.pilula,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: cor, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: Espaco.curto),
+          Text(
+            local ? 'Local' : 'Nuvem',
+            style: TextStyle(fontSize: 11.5, color: cores.onSurface),
           ),
         ],
       ),

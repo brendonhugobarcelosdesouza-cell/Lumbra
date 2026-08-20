@@ -19,9 +19,14 @@ dependencies:
   # streaming. Exceção nomeada e confinada a features/chat/chat_stream.dart.
   http: ^1.2.0
   # renderiza a resposta do assistente em Markdown (negrito, listas, código,
-  # tabelas). Só na bolha do assistente; a do usuário é texto plano. API
-  # mínima e estável (MarkdownBody), compatível com Flutter >=3.19.
-  flutter_markdown: ^0.7.3
+  # tabelas). Só na bolha do assistente; a do usuário é texto plano.
+  #
+  # `_plus` e nao `flutter_markdown`: o pacote original, da Google, foi
+  # DESCONTINUADO em maio de 2025 e aponta este como sucessor. A API e a
+  # mesma (MarkdownBody, MarkdownStyleSheet), entao a troca e mecanica —
+  # construir a renderizacao rica que a interface precisa sobre um pacote
+  # que nao recebe mais correcao seria divida no primeiro dia.
+  flutter_markdown_plus: ^1.0.12
   # o cliente da Platform API é GERADO do contrato (P1-d): o app nunca
   # escreve HTTP à mão. Materializado por packages/lumbra_api_dart/generate.sh
   lumbra_api:

@@ -3,6 +3,56 @@ import 'package:lumbra_api/api.dart';
 
 import '../../core/api.dart';
 
+/// Qual conversa está aberta no painel do meio.
+///
+/// Mora fora da tela de propósito: com o chat dentro da moldura, quem precisa
+/// saber a conversa aberta são pelo menos três widgets irmãos — a coluna da
+/// esquerda (para destacar), o painel do meio (para desenhar) e o painel de
+/// contexto da direita (para explicar). Enquanto isso era um
+/// `Navigator.push`, a resposta vivia na pilha de rotas e ninguém conseguia
+/// perguntar.
+class ConversaAberta {
+  const ConversaAberta({
+    required this.id,
+    this.titulo,
+    this.provedor,
+    this.localApenas,
+  });
+
+  /// O que a lista já sabe sobre a conversa, inclusive a política de modelo.
+  ///
+  /// `model_policy` sempre veio no contrato (`{privacy, provider}`) e o app
+  /// nunca leu. É o que permite dizer "Local" ou "Nuvem" no cabeçalho já na
+  /// abertura, sem esperar o usuário trocar de modelo para descobrirmos.
+  factory ConversaAberta.daLista(ConversationOut c) {
+    final politica = c.modelPolicy;
+    final privacidade = politica['privacy'];
+    return ConversaAberta(
+      id: c.id,
+      titulo: c.title,
+      provedor: politica['provider'] as String?,
+      localApenas: privacidade is String ? privacidade == 'local_only' : null,
+    );
+  }
+
+  final String id;
+
+  /// O título conhecido pela LISTA. Serve para o cabeçalho aparecer já
+  /// preenchido enquanto o histórico carrega; quem manda depois é o
+  /// controlador da conversa.
+  final String? titulo;
+
+  final String? provedor;
+
+  /// `true` quando a conversa está em `local_only`, `false` em `allow_cloud`,
+  /// `null` quando não sabemos. Os três casos são diferentes: não saber não
+  /// é o mesmo que ser nuvem, e afirmar "Local" por falta de informação seria
+  /// a pior mentira que esta interface poderia contar.
+  final bool? localApenas;
+}
+
+final conversaAbertaProvider = StateProvider<ConversaAberta?>((_) => null);
+
 /// ChatApi sobre o cliente autenticado (exige Bearer + escopos).
 final chatApiProvider = Provider<ChatApi>(
   (ref) => ChatApi(ref.watch(apiClientProvider)),

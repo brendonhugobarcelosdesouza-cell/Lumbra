@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumbra_api/api.dart';
-import 'package:lumbra_app/features/chat/conversations_screen.dart';
+import 'package:lumbra_app/features/chat/coluna_de_conversas.dart';
 
 /// O agrupamento por data é o que transforma "Conversa, Conversa, Conversa"
 /// numa lista onde dá para achar algo. Quem localiza a pessoa é o TEMPO

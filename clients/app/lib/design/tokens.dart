@@ -86,6 +86,22 @@ abstract final class Coluna {
   /// Linha longa demais cansa: o olho perde o começo da seguinte. Este é o
   /// limite da BOLHA, não da coluna — a coluna cresce e o texto se centra.
   static const leitura = 720.0;
+
+  /// O mínimo que a conversa aceita antes de a coleção ter de sair de cena.
+  /// Abaixo disto o texto quebra em tiras e ler vira trabalho.
+  static const minimaDaConversa = 480.0;
+
+  /// A partir de quanto ESPAÇO DA SEÇÃO cabem a coleção e a conversa.
+  ///
+  /// Medido no espaço da seção, e não na janela — foi exatamente aqui que eu
+  /// errei. A seção Conversas vive dentro da moldura, então o que ela tem é a
+  /// janela MENOS a barra lateral. Comparando com a largura da janela, uma
+  /// tela de 1263 px caía no desenho estreito porque a seção só recebia 1043,
+  /// e o app mostrava uma coluna onde cabiam duas.
+  ///
+  /// A regra certa é a que o próprio widget consegue verificar: ele sabe
+  /// quanto espaço tem, não sabe o tamanho da janela.
+  static const cabeAColecao = colecao + minimaDaConversa;
 }
 
 /// Quando a moldura muda de forma.

@@ -339,14 +339,40 @@ void main() {
     expect(c.read(conversaProvider(conversa)).titulo, 'Plano financeiro');
   });
 
-  test('título vindo da lista não sobrescreve o que já existe', () async {
+  test('o que vem da lista não sobrescreve o que a conversa já sabe', () async {
+    // a lista é a fonte mais VELHA das três (lista, histórico, escolha do
+    // usuário). Deixá-la ganhar faria trocar de modelo e ver o seletor
+    // voltar sozinho ao valor antigo alguns segundos depois.
     final c = _montar(_Roteirista(const []));
     await assentar(c);
     final notifier = c.read(conversaProvider(conversa).notifier);
 
-    notifier.adotarTitulo('Da lista');
-    expect(c.read(conversaProvider(conversa)).titulo, 'Da lista');
-    notifier.adotarTitulo('Outro qualquer');
-    expect(c.read(conversaProvider(conversa)).titulo, 'Da lista');
+    notifier.adotarDaLista(
+      titulo: 'Da lista',
+      provedor: 'ollama',
+      localApenas: true,
+    );
+    var estado = c.read(conversaProvider(conversa));
+    expect(estado.titulo, 'Da lista');
+    expect(estado.provedor, 'ollama');
+    expect(estado.localApenas, isTrue);
+
+    notifier.adotarDaLista(
+      titulo: 'Outro qualquer',
+      provedor: 'anthropic',
+      localApenas: false,
+    );
+    estado = c.read(conversaProvider(conversa));
+    expect(estado.titulo, 'Da lista');
+    expect(estado.provedor, 'ollama');
+    expect(estado.localApenas, isTrue);
+  });
+
+  test('sem política conhecida, localApenas fica nulo (e não "local")', () async {
+    // três estados, não dois: não saber de onde a resposta vem NÃO é o mesmo
+    // que ela vir da máquina. O cabeçalho não desenha selo nenhum neste caso.
+    final c = _montar(_Roteirista(const []));
+    final estado = await assentar(c);
+    expect(estado.localApenas, isNull);
   });
 }
