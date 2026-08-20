@@ -29,7 +29,7 @@ Future<void> _montar(WidgetTester tester, List<DocumentOut> docs) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [documentsProvider.overrideWith((ref) async => docs)],
-      child: const MaterialApp(home: DocumentsScreen()),
+      child: const MaterialApp(home: Scaffold(body: DocumentsScreen())),
     ),
   );
   await tester.pumpAndSettle();
@@ -77,7 +77,17 @@ void main() {
   testWidgets('acervo vazio convida a indexar', (tester) async {
     await _montar(tester, const []);
     expect(find.textContaining('Nenhum documento ainda.'), findsOneWidget);
-    expect(find.widgetWithText(FloatingActionButton, 'Indexar pasta'), findsWidgets);
+    // UM botão, não dois: com o acervo vazio o cabeçalho cede o seu, porque
+    // dois botões idênticos na mesma tela não são duas oportunidades — são a
+    // pessoa decidindo em qual clicar
+    expect(find.widgetWithText(FilledButton, 'Indexar pasta'), findsOneWidget);
+  });
+
+  testWidgets('com acervo, o botão de indexar volta para o cabeçalho', (
+    tester,
+  ) async {
+    await _montar(tester, [_documento()]);
+    expect(find.widgetWithText(FilledButton, 'Indexar pasta'), findsOneWidget);
   });
 
   testWidgets('o diálogo de indexar promete privacidade e pede o caminho', (

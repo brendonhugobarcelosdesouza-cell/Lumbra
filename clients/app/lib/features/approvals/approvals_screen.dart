@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumbra_api/api.dart';
 
+import '../../design/secao.dart';
+import '../../design/tokens.dart';
 import 'approvals_providers.dart';
 
 /// A caixa de aprovações (L2.0/L2) — onde o Human-in-the-Loop deixa de ser
@@ -16,29 +18,28 @@ class ApprovalsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final pendentes = ref.watch(pendingApprovalsProvider);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Aprovações')),
-      body: pendentes.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (erro, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(
-              'Não foi possível carregar os pedidos.\n$erro',
-              textAlign: TextAlign.center,
+    return MolduraDeSecao(
+      titulo: 'Aprovações',
+      child: ListaAssincrona<ApprovalOut>(
+        valor: ref.watch(pendingApprovalsProvider),
+        oQueSeria: 'os pedidos',
+        iconeDoVazio: Icons.verified_user_outlined,
+        quandoVazio:
+            'Nada aguardando sua decisão. Quando a Lumbra quiser fazer algo '
+            'de impacto, o pedido aparece aqui antes de acontecer.',
+        aoTerConteudo: (lista) => ColunaDeLeitura(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(
+              Espaco.grande,
+              Espaco.largo,
+              Espaco.grande,
+              Espaco.enorme,
             ),
+            children: [
+              for (final pedido in lista) _CartaoPedido(pedido: pedido),
+            ],
           ),
         ),
-        data: (lista) => lista.isEmpty
-            ? const Center(child: Text('Nada aguardando sua decisão.'))
-            : ListView(
-                padding: const EdgeInsets.all(12),
-                children: [
-                  for (final pedido in lista)
-                    _CartaoPedido(pedido: pedido),
-                ],
-              ),
       ),
     );
   }
@@ -51,67 +52,87 @@ class _CartaoPedido extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      // plano, com contorno em vez de sombra: a sombra sugere hierarquia que
-      // não existe aqui — todo pedido pesa igual
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Theme.of(context).colorScheme.outline),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    _titulo(pedido),
-                    style: Theme.of(context).textTheme.titleMedium,
+    final cores = Theme.of(context).colorScheme;
+    final textos = Theme.of(context).textTheme;
+
+    return CartaoDaLumbra(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  _titulo(pedido),
+                  style: textos.bodyMedium?.copyWith(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-                Chip(
-                  label: Text(pedido.riskLevel),
-                  visualDensity: VisualDensity.compact,
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              pedido.action,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            // a razao so aparece de novo se nao virou o titulo
-            if (pedido.reason.isNotEmpty && _titulo(pedido) != pedido.reason) ...[
-              const SizedBox(height: 8),
-              Text(pedido.reason),
-            ],
-            // os passos propostos: é o que o usuário está aprovando de fato
-            for (final passo in _passos(pedido))
-              Padding(
-                padding: const EdgeInsets.only(top: 4, left: 8),
-                child: Text('• $passo'),
               ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: () => _decidir(context, ref, aprovar: false),
-                  child: const Text('Descartar'),
-                ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: () => _decidir(context, ref, aprovar: true),
-                  child: const Text('Aprovar'),
-                ),
-              ],
+              const SizedBox(width: Espaco.medio),
+              _Risco(pedido.riskLevel),
+            ],
+          ),
+          const SizedBox(height: Espaco.minimo),
+          Text(
+            pedido.action,
+            style: TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 11.5,
+              color: cores.onSurfaceVariant,
+            ),
+          ),
+          // a razão só aparece de novo se não virou o título
+          if (pedido.reason.isNotEmpty &&
+              _titulo(pedido) != pedido.reason) ...[
+            const SizedBox(height: Espaco.medio),
+            Text(
+              pedido.reason,
+              style: textos.bodyMedium?.copyWith(fontSize: 13, height: 1.5),
             ),
           ],
-        ),
+          // os passos propostos: é o que o usuário está aprovando de fato
+          if (_passos(pedido).isNotEmpty) ...[
+            const SizedBox(height: Espaco.medio),
+            for (final passo in _passos(pedido))
+              Padding(
+                padding: const EdgeInsets.only(bottom: Espaco.minimo),
+                child: Text(
+                  '• $passo',
+                  style: textos.bodyMedium?.copyWith(
+                    fontSize: 13,
+                    height: 1.5,
+                  ),
+                ),
+              ),
+          ],
+          const SizedBox(height: Espaco.largo),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () => _decidir(context, ref, aprovar: false),
+                style: TextButton.styleFrom(
+                  foregroundColor: cores.onSurfaceVariant,
+                ),
+                child: const Text('Descartar'),
+              ),
+              const SizedBox(width: Espaco.curto),
+              FilledButton(
+                onPressed: () => _decidir(context, ref, aprovar: true),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: Espaco.grande,
+                    vertical: Espaco.medio,
+                  ),
+                ),
+                child: const Text('Aprovar'),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -178,4 +199,60 @@ class _CartaoPedido extends ConsumerWidget {
       ).showSnackBar(SnackBar(content: Text('Não foi possível decidir: $e')));
     }
   }
+}
+
+/// O nível de risco do pedido, com cor.
+///
+/// Cor porque é a única informação do cartão que muda a ATENÇÃO exigida: um
+/// pedido de risco alto e um de risco baixo têm a mesma forma e não podem
+/// ter o mesmo peso visual. O rótulo vem do Core e não é traduzido aqui —
+/// traduzir sem saber o conjunto completo é convidar um `switch` que
+/// silenciosamente deixa um caso de fora.
+class _Risco extends StatelessWidget {
+  const _Risco(this.nivel);
+
+  final String nivel;
+
+  @override
+  Widget build(BuildContext context) {
+    final cores = Theme.of(context).colorScheme;
+    final cor = switch (nivel) {
+      'critical' || 'high' => cores.error,
+      'medium' => cores.primary,
+      _ => cores.onSurfaceVariant,
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Espaco.curto,
+        vertical: Espaco.micro,
+      ),
+      decoration: BoxDecoration(
+        color: cores.surfaceContainerHigh,
+        borderRadius: Raio.bordaSelo,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 5,
+            height: 5,
+            decoration: BoxDecoration(color: cor, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: Espaco.curto - 2),
+          Text(
+            _emPortugues(nivel),
+            style: TextStyle(fontSize: 11, color: cores.onSurface),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _emPortugues(String nivel) => switch (nivel) {
+    'low' => 'risco baixo',
+    'medium' => 'risco médio',
+    'high' => 'risco alto',
+    'critical' => 'risco crítico',
+    _ => nivel,
+  };
 }

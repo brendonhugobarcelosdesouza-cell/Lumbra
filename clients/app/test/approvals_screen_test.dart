@@ -22,7 +22,7 @@ Future<void> _montar(WidgetTester tester, List<ApprovalOut> fila) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [pendingApprovalsProvider.overrideWith((ref) async => fila)],
-      child: const MaterialApp(home: ApprovalsScreen()),
+      child: const MaterialApp(home: Scaffold(body: ApprovalsScreen())),
     ),
   );
   await tester.pumpAndSettle();
@@ -31,7 +31,10 @@ Future<void> _montar(WidgetTester tester, List<ApprovalOut> fila) async {
 void main() {
   testWidgets('fila vazia diz que não há nada a decidir', (tester) async {
     await _montar(tester, const []);
-    expect(find.text('Nada aguardando sua decisão.'), findsOneWidget);
+    expect(find.textContaining('Nada aguardando sua decisão.'), findsOneWidget);
+    // e explica QUANDO algo apareceria ali: fila vazia sem contexto parece
+    // recurso quebrado, não sistema em paz
+    expect(find.textContaining('antes de acontecer'), findsOneWidget);
   });
 
   testWidgets('o pedido mostra o que será feito, não só o nome da ação', (
@@ -44,8 +47,10 @@ void main() {
     // e os passos propostos, um a um
     expect(find.text('• Reiniciar o Nó'), findsOneWidget);
     expect(find.text('• Rodar reindexar com force'), findsOneWidget);
-    // o risco fica visível, e a ação técnica também
-    expect(find.text('medium'), findsOneWidget);
+    // o risco fica visível em português: 'medium' não diz a ninguém quanta
+    // atenção o pedido merece
+    expect(find.text('risco médio'), findsOneWidget);
+    expect(find.text('medium'), findsNothing);
     expect(find.text('playbook.write'), findsOneWidget);
   });
 

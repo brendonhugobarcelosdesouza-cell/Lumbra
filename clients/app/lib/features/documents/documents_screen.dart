@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumbra_api/api.dart';
 
+import '../../design/secao.dart';
+import '../../design/tokens.dart';
 import 'document_status_screen.dart';
 import 'documents_providers.dart';
 
@@ -18,42 +20,52 @@ class DocumentsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final documentos = ref.watch(documentsProvider);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Documentos')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _pedirPasta(context, ref),
-        icon: const Icon(Icons.create_new_folder_outlined),
-        label: const Text('Indexar pasta'),
-      ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: documentos.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (erro, _) => Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'Não foi possível carregar o acervo.\n$erro',
-                  textAlign: TextAlign.center,
-                ),
+    // sem acervo, o estado vazio JÁ oferece o botão, centralizado e
+    // explicado. Dois botões idênticos na mesma tela não são duas
+    // oportunidades: são a pessoa decidindo em qual clicar.
+    final vazio = documentos.valueOrNull?.isEmpty ?? false;
+
+    return MolduraDeSecao(
+      titulo: 'Documentos',
+      acoes: [
+        if (!vazio)
+          FilledButton.icon(
+            onPressed: () => _pedirPasta(context, ref),
+            icon: const Icon(Icons.create_new_folder_outlined, size: 17),
+            label: const Text('Indexar pasta'),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: Espaco.largo,
+                vertical: Espaco.medio,
+              ),
+              textStyle: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
               ),
             ),
-            data: (lista) => lista.isEmpty
-                ? const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text(
-                        'Nenhum documento ainda.\n'
-                        'Indexe uma pasta para a Lumbra poder consultá-la.',
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  )
-                : ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-                    children: [for (final d in lista) _Documento(documento: d)],
-                  ),
+          ),
+      ],
+      child: ListaAssincrona<DocumentOut>(
+        valor: documentos,
+        oQueSeria: 'o acervo',
+        iconeDoVazio: Icons.folder_outlined,
+        quandoVazio:
+            'Nenhum documento ainda. Indexe uma pasta para a Lumbra poder '
+            'consultá-la — os arquivos ficam onde estão, no seu computador.',
+        acaoDoVazio: FilledButton.icon(
+          onPressed: () => _pedirPasta(context, ref),
+          icon: const Icon(Icons.create_new_folder_outlined, size: 17),
+          label: const Text('Indexar pasta'),
+        ),
+        aoTerConteudo: (lista) => ColunaDeLeitura(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(
+              Espaco.grande,
+              Espaco.largo,
+              Espaco.grande,
+              Espaco.enorme,
+            ),
+            children: [for (final d in lista) _Documento(documento: d)],
           ),
         ),
       ),
@@ -176,34 +188,58 @@ class _Documento extends StatelessWidget {
     final cores = Theme.of(context).colorScheme;
     final textos = Theme.of(context).textTheme;
     final falhou = documento.processingState == 'failed';
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: cores.outline),
+    final pronto = documento.processingState == 'indexed';
+    final nome = documento.title ?? _nomeDoArquivo(documento.uri);
+
+    return CartaoDaLumbra(
+      // a lista diz O QUE aconteceu; tocar mostra ONDE
+      aoTocar: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              DocumentStatusScreen(documentId: documento.id, titulo: nome),
+        ),
       ),
-      child: ListTile(
-        leading: Icon(
-          falhou ? Icons.error_outline : Icons.description_outlined,
-          color: falhou ? cores.error : null,
-        ),
-        title: Text(documento.title ?? _nomeDoArquivo(documento.uri)),
-        subtitle: Text(
-          '${estadosDoPipeline[documento.processingState] ?? documento.processingState}'
-          '${documento.version > 1 ? ' · versão ${documento.version}' : ''}',
-          style: textos.bodySmall,
-        ),
-        trailing: const Icon(Icons.chevron_right, size: 20),
-        // a lista diz O QUE aconteceu; tocar mostra ONDE
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => DocumentStatusScreen(
-              documentId: documento.id,
-              titulo: documento.title ?? _nomeDoArquivo(documento.uri),
+      child: Row(
+        children: [
+          Icon(
+            falhou ? Icons.error_outline : Icons.description_outlined,
+            size: 18,
+            color: falhou ? cores.error : cores.onSurfaceVariant,
+          ),
+          const SizedBox(width: Espaco.medio),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  nome,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textos.bodyMedium?.copyWith(fontSize: 13.5),
+                ),
+                if (documento.version > 1)
+                  Padding(
+                    padding: const EdgeInsets.only(top: Espaco.micro),
+                    child: Text(
+                      'versão ${documento.version}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: cores.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
-        ),
+          const SizedBox(width: Espaco.medio),
+          _EstadoDoPipeline(
+            estado: documento.processingState,
+            falhou: falhou,
+            pronto: pronto,
+          ),
+          const SizedBox(width: Espaco.curto),
+          Icon(Icons.chevron_right, size: 18, color: cores.onSurfaceVariant),
+        ],
       ),
     );
   }
@@ -212,5 +248,56 @@ class _Documento extends StatelessWidget {
   static String _nomeDoArquivo(String uri) {
     final partes = uri.split('/');
     return partes.isEmpty ? uri : Uri.decodeComponent(partes.last);
+  }
+}
+
+/// Em que pé está a leitura deste arquivo.
+///
+/// Vale um selo com cor porque a diferença entre "na fila" e "pesquisável" é
+/// a diferença entre "a Lumbra ainda não sabe disso" e "pode perguntar" — e
+/// alguém que pergunta cedo demais conclui que a indexação não funcionou.
+class _EstadoDoPipeline extends StatelessWidget {
+  const _EstadoDoPipeline({
+    required this.estado,
+    required this.falhou,
+    required this.pronto,
+  });
+
+  final String estado;
+  final bool falhou;
+  final bool pronto;
+
+  @override
+  Widget build(BuildContext context) {
+    final cores = Theme.of(context).colorScheme;
+    final cor = falhou
+        ? cores.error
+        : (pronto ? const Color(0xFF4CAF7D) : cores.onSurfaceVariant);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Espaco.curto,
+        vertical: Espaco.micro,
+      ),
+      decoration: BoxDecoration(
+        color: cores.surfaceContainerHigh,
+        borderRadius: Raio.bordaSelo,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 5,
+            height: 5,
+            decoration: BoxDecoration(color: cor, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: Espaco.curto - 2),
+          Text(
+            estadosDoPipeline[estado] ?? estado,
+            style: TextStyle(fontSize: 11, color: cores.onSurface),
+          ),
+        ],
+      ),
+    );
   }
 }
