@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../design/tokens.dart';
 import 'chat_providers.dart';
+import 'composer.dart';
 import 'conversa_estado.dart';
 import 'mensagens.dart';
 
@@ -106,7 +107,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ),
         Divider(height: 1, color: Theme.of(context).colorScheme.outlineVariant),
         Expanded(child: _corpo(estado)),
-        _entrada(estado),
+        Composer(
+          controlador: _campo,
+          enviando: estado.enviando,
+          aoEnviar: _enviar,
+          aoParar: _controlador.parar,
+        ),
       ],
     );
   }
@@ -139,48 +145,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       ),
       itemCount: vivas.length,
       itemBuilder: (_, i) => MensagemDaConversa(vivas[i]),
-    );
-  }
-
-  Widget _entrada(EstadoDaConversa estado) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        Espaco.medio,
-        Espaco.curto,
-        Espaco.medio,
-        Espaco.medio,
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _campo,
-              minLines: 1,
-              maxLines: 5,
-              enabled: !estado.enviando,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) => _enviar(),
-              decoration: const InputDecoration(
-                hintText: 'Pergunte ou diga à Lumbra o que fazer…',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ),
-          const SizedBox(width: Espaco.curto),
-          if (estado.enviando)
-            IconButton.filledTonal(
-              tooltip: 'Parar',
-              onPressed: _controlador.parar,
-              icon: const Icon(Icons.stop),
-            )
-          else
-            IconButton.filled(
-              tooltip: 'Enviar',
-              onPressed: _enviar,
-              icon: const Icon(Icons.send),
-            ),
-        ],
-      ),
     );
   }
 
