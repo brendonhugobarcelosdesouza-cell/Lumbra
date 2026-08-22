@@ -13,6 +13,7 @@ import 'package:lumbra_app/features/approvals/approvals_screen.dart';
 import 'package:lumbra_app/features/chat/chat_providers.dart';
 import 'package:lumbra_app/features/chat/conversations_screen.dart';
 import 'package:lumbra_app/features/devices/devices_screen.dart';
+import 'package:lumbra_app/features/documents/document_status_screen.dart';
 import 'package:lumbra_app/features/documents/documents_providers.dart';
 import 'package:lumbra_app/features/documents/documents_screen.dart';
 import 'package:lumbra_app/features/memories/memories_providers.dart';
@@ -130,6 +131,28 @@ DeviceResponse _dispositivo() => DeviceResponse(
   scopes: const ['chat.read', 'chat.write', 'documents.read'],
 );
 
+DocumentStatusOut _estadoDoDocumento() => DocumentStatusOut(
+  state: 'failed',
+  version: 3,
+  timeline: [
+    TimelineEntryOut(
+      stage: 'extract',
+      success: false,
+      durationMs: 1840,
+      startedAt: '2026-08-01T10:00:00Z',
+      message: 'PDF sem camada de texto; OCR não estava disponível nesta '
+          'máquina quando a indexação rodou.',
+    ),
+  ],
+  versions: [
+    DocumentVersionOut(
+      version: 3,
+      reason: 'arquivo alterado no disco',
+      createdAt: '2026-08-01T10:00:00Z',
+    ),
+  ],
+);
+
 ConversationOut _conversa() => ConversationOut(
   id: 'c1',
   userId: 'u',
@@ -167,6 +190,7 @@ List<Override> _dados() => [
   devicesListProvider.overrideWith((ref) async => [_dispositivo()]),
   conversationsProvider.overrideWith((ref) async => [_conversa()]),
   saudeProvider.overrideWith((ref) async => _saude()),
+  documentStatusProvider('d1').overrideWith((ref) async => _estadoDoDocumento()),
 ];
 
 /// Cada seção, pelo nome com que aparece na barra lateral.
@@ -179,6 +203,13 @@ const _secoes = <String, Widget>{
   'Aprovações': ApprovalsScreen(),
   'Agentes': AgentsScreen(),
   'Dispositivos': DevicesScreen(),
+  // não é uma seção da barra: é a rota que se abre de dentro de
+  // Documentos. Entra na varredura porque largura não distingue seção de
+  // detalhe — e porque foi a última tela a sair do desenho antigo.
+  'Estado do documento': DocumentStatusScreen(
+    documentId: 'd1',
+    titulo: _tituloLongo,
+  ),
 };
 
 void main() {

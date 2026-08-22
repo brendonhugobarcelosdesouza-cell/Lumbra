@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lumbra_api/api.dart';
 
+import '../../design/secao.dart';
+import '../../design/tokens.dart';
 import 'documents_providers.dart';
 import 'documents_screen.dart' show estadosDoPipeline;
 
@@ -24,26 +26,29 @@ class DocumentStatusScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final status = ref.watch(documentStatusProvider(documentId));
+    // a última tela que ainda desenhava os próprios estados: roda de
+    // progresso crua no carregando, `$erro` despejado na tela no erro. Os
+    // três estados agora são os mesmos de todas as seções — carregar,
+    // falhar e não ter nada acontecem em toda tela, e aprender três
+    // desenhos diferentes para a mesma coisa é custo sem contrapartida.
     return Scaffold(
       appBar: AppBar(title: Text(titulo)),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: status.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (erro, _) => Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'Não foi possível carregar o estado deste documento.\n$erro',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-            data: (dados) => dados == null
-                ? const Center(child: Text('Sem informação sobre este documento.'))
-                : _Corpo(status: dados),
+      body: ColunaDeLeitura(
+        child: status.when(
+          loading: () => const Carregando(),
+          error: (erro, _) => Falhou(
+            oQueSeria: 'o estado deste documento',
+            detalhe: '$erro',
+            aoTentarDeNovo: () =>
+                ref.invalidate(documentStatusProvider(documentId)),
           ),
+          data: (dados) => dados == null
+              ? const Vazio(
+                  texto: 'A Lumbra não tem registro do que fez com este '
+                      'arquivo. Reindexar cria a trilha.',
+                  icone: Icons.hourglass_empty,
+                )
+              : _Corpo(status: dados),
         ),
       ),
     );
@@ -59,23 +64,28 @@ class _Corpo extends StatelessWidget {
   Widget build(BuildContext context) {
     final textos = Theme.of(context).textTheme;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+      padding: const EdgeInsets.fromLTRB(
+        Espaco.grande,
+        Espaco.largo,
+        Espaco.grande,
+        Espaco.enorme,
+      ),
       children: [
         Text(
           '${estadosDoPipeline[status.state] ?? status.state}'
           ' · versão ${status.version}',
           style: textos.titleMedium,
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: Espaco.amplo),
         if (status.timeline.isNotEmpty) ...[
           Text('O que a Lumbra fez com ele', style: textos.labelLarge),
-          const SizedBox(height: 8),
+          const SizedBox(height: Espaco.curto),
           for (final etapa in status.timeline) _Etapa(etapa: etapa),
-          const SizedBox(height: 24),
+          const SizedBox(height: Espaco.grande),
         ],
         if (status.versions.isNotEmpty) ...[
           Text('Histórico', style: textos.labelLarge),
-          const SizedBox(height: 8),
+          const SizedBox(height: Espaco.curto),
           for (final v in status.versions) _Versao(versao: v),
         ],
       ],
@@ -93,7 +103,7 @@ class _Etapa extends StatelessWidget {
     final cores = Theme.of(context).colorScheme;
     final textos = Theme.of(context).textTheme;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: Espaco.curto),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -102,7 +112,7 @@ class _Etapa extends StatelessWidget {
             size: 18,
             color: etapa.success ? cores.primary : cores.error,
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: Espaco.curto),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -135,7 +145,7 @@ class _Versao extends StatelessWidget {
   Widget build(BuildContext context) {
     final textos = Theme.of(context).textTheme;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: Espaco.curto),
       child: Text(
         'v${versao.version} · ${versao.reason}'
         // indexado nulo é informação, não ausência: significa que aquela

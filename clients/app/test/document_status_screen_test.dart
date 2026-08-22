@@ -103,8 +103,12 @@ void main() {
     expect(find.textContaining('nunca indexada'), findsOneWidget);
   });
 
-  testWidgets('sem informação, a tela diz isso', (tester) async {
+  testWidgets('sem informação, diz o que fazer a respeito', (tester) async {
+    // "Sem informação sobre este documento." era um encolher de ombros:
+    // verdadeiro e inútil. Quem chega aqui chegou perguntando por que a
+    // Lumbra não acha um arquivo, e a resposta tem que ter uma saída.
     await _montar(tester, null);
-    expect(find.text('Sem informação sobre este documento.'), findsOneWidget);
+    expect(find.textContaining('não tem registro'), findsOneWidget);
+    expect(find.textContaining('Reindexar'), findsOneWidget);
   });
 }
