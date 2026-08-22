@@ -13,6 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, Field
 
 from lumbra.diagnostics import checks
 from lumbra.kernel.kernel import LumbraKernel
@@ -52,21 +53,62 @@ carregar();setInterval(carregar,30000);
 </script></html>"""
 
 
+class CheckOut(BaseModel):
+    """Uma verificação do diagnóstico, como o `lumbra doctor` a produz."""
+
+    name: str
+    status: str
+    summary: str
+    detail: str | None = None
+    # `fix` é obrigatório em WARN/FAIL por contrato do CheckResult, e é o
+    # campo que separa um diagnóstico de uma reclamação
+    fix: str | None = None
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
+class ResumoOut(BaseModel):
+    ok: int = 0
+    warn: int = 0
+    fail: int = 0
+    skip: int = 0
+
+
+class HealthOut(BaseModel):
+    """O estado da plataforma inteira, tipado.
+
+    Era um `dict[str, Any]`, o que no cliente gerado virava
+    `Map<String, Object>` — mapa livre. Funciona, e é exatamente o tipo de
+    coisa que funciona até alguém renomear um campo: o app compila, roda, e
+    a tela fica vazia sem ninguém saber por quê.
+
+    A tela de Visão geral consome isto. Tipar antes de construir a tela é
+    mais barato que descobrir a divergência com o app na mão.
+    """
+
+    version: str
+    environment: str
+    ready: bool
+    summary: ResumoOut
+    modules: list[str]
+    skills: int
+    checks: list[CheckOut]
+
+
 def build_system_router(settings: Settings, kernel: LumbraKernel) -> APIRouter:
     router = APIRouter(prefix="/api/v1/system", tags=["ops"])
 
     @router.get("/health")
-    async def saude() -> dict[str, Any]:
+    async def saude() -> HealthOut:
         resultados = await checks.executar(settings)
-        return {
-            "version": checks.versao_da_plataforma(),
-            "environment": settings.environment,
-            "ready": checks.tudo_pronto(resultados),
-            "summary": checks.resumo(resultados),
-            "modules": [m.manifest.name for m in kernel.modules()],
-            "skills": len(kernel.skills.manifests()),
-            "checks": [r.as_dict() for r in resultados],
-        }
+        return HealthOut(
+            version=checks.versao_da_plataforma(),
+            environment=settings.environment,
+            ready=checks.tudo_pronto(resultados),
+            summary=ResumoOut(**checks.resumo(resultados)),
+            modules=[m.manifest.name for m in kernel.modules()],
+            skills=len(kernel.skills.manifests()),
+            checks=[CheckOut(**r.as_dict()) for r in resultados],
+        )
 
     @router.get("/eventbus")
     async def eventbus() -> dict[str, Any]:

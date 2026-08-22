@@ -587,6 +587,57 @@
         "title": "ChatProviderInfo",
         "type": "object"
       },
+      "CheckOut": {
+        "description": "Uma verificação do diagnóstico, como o `lumbra doctor` a produz.",
+        "properties": {
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "fix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fix"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "status",
+          "summary"
+        ],
+        "title": "CheckOut",
+        "type": "object"
+      },
       "CitationOut": {
         "description": "Fonte citada numa resposta — espelha o Citation do domínio em tipos\nJSON. Modelo da API (contrato), separado da saída interna da skill.",
         "properties": {
@@ -1113,6 +1164,55 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthOut": {
+        "description": "O estado da plataforma inteira, tipado.\n\nEra um `dict[str, Any]`, o que no cliente gerado virava\n`Map<String, Object>` — mapa livre. Funciona, e é exatamente o tipo de\ncoisa que funciona até alguém renomear um campo: o app compila, roda, e\na tela fica vazia sem ninguém saber por quê.\n\nA tela de Visão geral consome isto. Tipar antes de construir a tela é\nmais barato que descobrir a divergência com o app na mão.",
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/CheckOut"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "environment": {
+            "title": "Environment",
+            "type": "string"
+          },
+          "modules": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Modules",
+            "type": "array"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "skills": {
+            "title": "Skills",
+            "type": "integer"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/ResumoOut"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "environment",
+          "ready",
+          "summary",
+          "modules",
+          "skills",
+          "checks"
+        ],
+        "title": "HealthOut",
         "type": "object"
       },
       "HistoryResponse": {
@@ -1645,6 +1745,32 @@
           "embedded"
         ],
         "title": "RememberOut",
+        "type": "object"
+      },
+      "ResumoOut": {
+        "properties": {
+          "fail": {
+            "default": 0,
+            "title": "Fail",
+            "type": "integer"
+          },
+          "ok": {
+            "default": 0,
+            "title": "Ok",
+            "type": "integer"
+          },
+          "skip": {
+            "default": 0,
+            "title": "Skip",
+            "type": "integer"
+          },
+          "warn": {
+            "default": 0,
+            "title": "Warn",
+            "type": "integer"
+          }
+        },
+        "title": "ResumoOut",
         "type": "object"
       },
       "SendBody": {
@@ -3706,9 +3832,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Saude Api V1 System Health Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/HealthOut"
                 }
               }
             },
