@@ -109,8 +109,14 @@ class _CartaoPedido extends ConsumerWidget {
               ),
           ],
           const SizedBox(height: Espaco.largo),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+          // Wrap e não Row: os dois botões pedem 306px e o cartão tem 278
+          // numa janela de 360. Numa `Row` isso corta o "Aprovar" pela
+          // metade — um botão de decisão irreversível parcialmente
+          // invisível. Aqui eles empilham, ainda alinhados à direita.
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: Espaco.curto,
+            runSpacing: Espaco.curto,
             children: [
               TextButton(
                 onPressed: () => _decidir(context, ref, aprovar: false),
@@ -119,7 +125,6 @@ class _CartaoPedido extends ConsumerWidget {
                 ),
                 child: const Text('Descartar'),
               ),
-              const SizedBox(width: Espaco.curto),
               FilledButton(
                 onPressed: () => _decidir(context, ref, aprovar: true),
                 style: FilledButton.styleFrom(
