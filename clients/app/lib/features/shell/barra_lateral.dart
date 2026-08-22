@@ -48,6 +48,7 @@ class BarraLateral extends StatelessWidget {
     required this.rodape,
     this.selos = const {},
     this.fixos = const [],
+    this.recolhida = false,
   });
 
   /// Grupos na ordem de exibição. Chave vazia = sem título (topo).
@@ -66,27 +67,49 @@ class BarraLateral extends StatelessWidget {
   final List<Secao> fixos;
   final Widget rodape;
 
+  /// Só os ícones, com o nome no tooltip.
+  ///
+  /// Não é preferência: é o que acontece quando a janela fica estreita
+  /// demais para a barra e a seção coexistirem. 220px de barra numa janela
+  /// de 500 deixam 280 para o trabalho — e o trabalho é o motivo de a
+  /// janela existir. Recolhida ela custa 60 e nenhum destino some.
+  final bool recolhida;
+
   @override
   Widget build(BuildContext context) {
     final cores = Theme.of(context).colorScheme;
     return Container(
-      width: Coluna.lateral,
+      width: recolhida ? Coluna.lateralRecolhida : Coluna.lateral,
       color: cores.surfaceContainer,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _Marca(),
+          _Marca(recolhida: recolhida),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.only(bottom: Espaco.curto),
               children: [
                 for (final grupo in grupos.entries) ...[
-                  if (grupo.key.isNotEmpty) _TituloDoGrupo(grupo.key),
+                  // recolhida, o título do grupo não cabe — mas a divisão
+                  // entre "o que a Lumbra guarda" e "como você manda nela"
+                  // continua legível como um traço
+                  if (grupo.key.isNotEmpty)
+                    if (recolhida)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: Espaco.medio,
+                          vertical: Espaco.curto,
+                        ),
+                        child: Divider(height: 1, color: cores.outlineVariant),
+                      )
+                    else
+                      _TituloDoGrupo(grupo.key),
                   for (final secao in grupo.value)
                     _Item(
                       secao: secao,
                       ativa: secao.nome == selecionada,
                       pendentes: selos[secao.nome] ?? 0,
+                      recolhida: recolhida,
                       aoTocar: secao.disponivel ? () => aoSelecionar(secao.nome) : null,
                     ),
                 ],
@@ -105,6 +128,7 @@ class BarraLateral extends StatelessWidget {
                       secao: secao,
                       ativa: secao.nome == selecionada,
                       pendentes: 0,
+                      recolhida: recolhida,
                       aoTocar: secao.disponivel
                           ? () => aoSelecionar(secao.nome)
                           : null,
@@ -121,10 +145,32 @@ class BarraLateral extends StatelessWidget {
 }
 
 class _Marca extends StatelessWidget {
-  const _Marca();
+  const _Marca({required this.recolhida});
+
+  final bool recolhida;
 
   @override
   Widget build(BuildContext context) {
+    if (recolhida) {
+      // 'LUMBRA' com espaçamento de assinatura não cabe em 60px; a inicial
+      // guarda o lugar e o tom sem virar um logotipo espremido
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(
+          Espaco.largo,
+          Espaco.amplo,
+          Espaco.largo,
+          Espaco.medio,
+        ),
+        child: Text(
+          'L',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w800,
+            fontSize: 14,
+          ),
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(Espaco.largo, Espaco.amplo, Espaco.largo, Espaco.medio),
       child: Text(
@@ -167,12 +213,14 @@ class _Item extends StatelessWidget {
     required this.ativa,
     required this.pendentes,
     required this.aoTocar,
+    this.recolhida = false,
   });
 
   final Secao secao;
   final bool ativa;
   final int pendentes;
   final VoidCallback? aoTocar;
+  final bool recolhida;
 
   @override
   Widget build(BuildContext context) {
@@ -185,38 +233,82 @@ class _Item extends StatelessWidget {
         ? cores.onSurfaceVariant
         : (ativa ? cores.onSurface : cores.onSurfaceVariant);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: Espaco.curto, vertical: 1),
-      child: Material(
-        color: ativa ? cores.surfaceContainerHigh : Colors.transparent,
-        borderRadius: Raio.bordaItem,
-        child: InkWell(
-          onTap: aoTocar,
-          borderRadius: Raio.bordaItem,
-          child: Opacity(
-            opacity: futura ? Opacidade.futuro : 1,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: Espaco.medio, vertical: Espaco.curto),
-              child: Row(
-                children: [
-                  Icon(ativa ? secao.iconeAtivo : secao.icone, size: 17, color: cor),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      secao.nome,
-                      style: textos.bodyMedium?.copyWith(
-                        color: cor,
-                        fontSize: 13,
-                        fontWeight: ativa ? FontWeight.w600 : FontWeight.w400,
-                        fontStyle: futura ? FontStyle.italic : FontStyle.normal,
-                      ),
+    final icone = Icon(
+      ativa ? secao.iconeAtivo : secao.icone,
+      size: 17,
+      color: cor,
+    );
+
+    final conteudo = recolhida
+        // recolhida, o contador não cabe ao lado do nome — mas some seria
+        // pior: pedido que ninguém vê equivale a pedido negado. Vira um
+        // ponto sobre o ícone, que é a forma que já significa isso em
+        // qualquer barra de tarefas.
+        ? Stack(
+            clipBehavior: Clip.none,
+            children: [
+              icone,
+              if (pendentes > 0)
+                Positioned(
+                  right: -3,
+                  top: -3,
+                  child: Container(
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      color: cores.primary,
+                      shape: BoxShape.circle,
                     ),
                   ),
-                  if (secao.selo != null) _Selo(secao.selo!),
-                  // o contador vive na barra e não dentro da tela: pedido que
-                  // ninguém vê equivale a pedido negado
-                  if (pendentes > 0) _Contador(pendentes),
-                ],
+                ),
+            ],
+          )
+        : Row(
+            children: [
+              icone,
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  secao.nome,
+                  style: textos.bodyMedium?.copyWith(
+                    color: cor,
+                    fontSize: 13,
+                    fontWeight: ativa ? FontWeight.w600 : FontWeight.w400,
+                    fontStyle: futura ? FontStyle.italic : FontStyle.normal,
+                  ),
+                ),
+              ),
+              if (secao.selo != null) _Selo(secao.selo!),
+              // o contador vive na barra e não dentro da tela: pedido que
+              // ninguém vê equivale a pedido negado
+              if (pendentes > 0) _Contador(pendentes),
+            ],
+          );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Espaco.curto, vertical: 1),
+      child: Tooltip(
+        // recolhida, o tooltip É o rótulo: sem ele a barra vira oito ícones
+        // que só se aprende clicando. O selo entra junto porque "Agenda" e
+        // "Agenda (P5)" são promessas diferentes.
+        message: recolhida
+            ? (secao.selo == null ? secao.nome : '${secao.nome} (${secao.selo})')
+            : '',
+        waitDuration: const Duration(milliseconds: 400),
+        child: Material(
+          color: ativa ? cores.surfaceContainerHigh : Colors.transparent,
+          borderRadius: Raio.bordaItem,
+          child: InkWell(
+            onTap: aoTocar,
+            borderRadius: Raio.bordaItem,
+            child: Opacity(
+              opacity: futura ? Opacidade.futuro : 1,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: Espaco.medio,
+                  vertical: Espaco.curto,
+                ),
+                child: conteudo,
               ),
             ),
           ),

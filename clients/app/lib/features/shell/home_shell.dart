@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/node_status.dart';
 import '../../core/session.dart';
+import '../../design/tokens.dart';
 import '../agents/agents_screen.dart';
 import '../approvals/approvals_providers.dart';
 import '../approvals/approvals_screen.dart';
@@ -124,16 +125,60 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final secao = ref.watch(secaoAtualProvider);
 
     return Scaffold(
-      body: Row(
-        children: [
-          BarraLateral(
+      body: LayoutBuilder(
+        builder: (context, janela) {
+          // aqui a régua É a janela, porque a moldura é a janela inteira.
+          // Na seção Conversas a régua é o espaço da seção — foi confundir
+          // as duas que fez uma tela de 1263px mostrar uma coluna onde
+          // cabiam duas.
+          final recolhida = janela.maxWidth < Coluna.cabeABarraInteira;
+          return _Moldura(
+            secao: secao,
             grupos: _grupos,
-            selecionada: secao,
-            selos: {Secoes.aprovacoes: pendentes},
             fixos: _fixos,
+            pendentes: pendentes,
+            recolhida: recolhida,
+            cores: cores,
             aoSelecionar: (nome) =>
                 ref.read(secaoAtualProvider.notifier).state = nome,
-            rodape: const _Rodape(),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _Moldura extends StatelessWidget {
+  const _Moldura({
+    required this.secao,
+    required this.grupos,
+    required this.fixos,
+    required this.pendentes,
+    required this.recolhida,
+    required this.cores,
+    required this.aoSelecionar,
+  });
+
+  final String secao;
+  final Map<String, List<Secao>> grupos;
+  final List<Secao> fixos;
+  final int pendentes;
+  final bool recolhida;
+  final ColorScheme cores;
+  final ValueChanged<String> aoSelecionar;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+        children: [
+          BarraLateral(
+            grupos: grupos,
+            selecionada: secao,
+            selos: {Secoes.aprovacoes: pendentes},
+            fixos: fixos,
+            recolhida: recolhida,
+            aoSelecionar: aoSelecionar,
+            rodape: _Rodape(recolhida: recolhida),
           ),
           VerticalDivider(width: 1, color: cores.outlineVariant),
           // IndexedStack e não troca de widget: sair de Conversas e voltar
@@ -154,7 +199,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             ),
           ),
         ],
-      ),
     );
   }
 }
@@ -171,7 +215,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 /// devolve perfil, então mostramos o que sabemos — o e-mail com que se
 /// entrou — e nada além disso.
 class _Rodape extends ConsumerWidget {
-  const _Rodape();
+  const _Rodape({this.recolhida = false});
+
+  final bool recolhida;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -200,8 +246,39 @@ class _Rodape extends ConsumerWidget {
         ),
       ],
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 12, 14),
-        child: Row(
+        padding: recolhida
+            ? const EdgeInsets.symmetric(horizontal: 12, vertical: 14)
+            : const EdgeInsets.fromLTRB(14, 12, 12, 14),
+        // recolhido, sobra a inicial com o semáforo do Nó em cima dela. As
+        // duas informações que a barra promete — quem está usando e se a
+        // Lumbra está de pé — continuam ali; o que sai é o texto.
+        child: recolhida
+            ? Tooltip(
+                message: '${email ?? 'Sessão ativa'} · ${_EstadoDoNo.texto(no)}',
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    _Inicial(email),
+                    Positioned(
+                      right: -1,
+                      bottom: -1,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: _EstadoDoNo.cor(no, cores),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: cores.surfaceContainer,
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : Row(
           children: [
             _Inicial(email),
             const SizedBox(width: 10),
@@ -273,18 +350,27 @@ class _EstadoDoNo extends StatelessWidget {
 
   final NodeState estado;
 
+  static String texto(NodeState estado) => switch (estado) {
+    NodeState.noAr => 'Nó local',
+    NodeState.verificando => 'Verificando o Nó',
+    NodeState.subindo => 'Iniciando o Nó',
+    NodeState.demorandoDemais => 'Nó demorando',
+    NodeState.foraDoAr => 'Nó fora do ar',
+  };
+
+  /// Verde e âmbar vindos da paleta, vermelho do esquema: o ponto é
+  /// semáforo, e semáforo que muda de tom entre temas deixa de ser lido.
+  static Color cor(NodeState estado, ColorScheme cores) => switch (estado) {
+    NodeState.noAr => const Color(0xFF4CAF7D),
+    NodeState.verificando => cores.onSurfaceVariant,
+    NodeState.subindo || NodeState.demorandoDemais => const Color(0xFFD99A2B),
+    NodeState.foraDoAr => cores.error,
+  };
+
   @override
   Widget build(BuildContext context) {
     final cores = Theme.of(context).colorScheme;
-    // verde e âmbar vindos da paleta, vermelho do esquema: o ponto é
-    // semáforo, e semáforo que muda de tom entre temas deixa de ser lido
-    final (texto, cor) = switch (estado) {
-      NodeState.noAr => ('Nó local', const Color(0xFF4CAF7D)),
-      NodeState.verificando => ('Verificando o Nó', cores.onSurfaceVariant),
-      NodeState.subindo => ('Iniciando o Nó', const Color(0xFFD99A2B)),
-      NodeState.demorandoDemais => ('Nó demorando', const Color(0xFFD99A2B)),
-      NodeState.foraDoAr => ('Nó fora do ar', cores.error),
-    };
+    final (texto, cor) = (_EstadoDoNo.texto(estado), _EstadoDoNo.cor(estado, cores));
 
     return Row(
       children: [

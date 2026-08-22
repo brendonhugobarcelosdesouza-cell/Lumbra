@@ -75,6 +75,14 @@ abstract final class Coluna {
   /// Barra lateral recolhida: só os ícones.
   static const lateralRecolhida = 60.0;
 
+  /// A partir de que largura DA JANELA a barra cabe com os rótulos.
+  ///
+  /// Esta é medida na janela, e não no espaço da seção, porque quem decide
+  /// é a própria moldura — ela é a janela inteira. É o oposto de
+  /// `cabeAColecao`, e a diferença entre as duas é a origem de um erro que
+  /// já custou uma rodada: a régua tem que ser a que o widget consegue ler.
+  static const cabeABarraInteira = lateral + minimaDaConversa;
+
   /// Lista de conversas.
   static const colecao = 280.0;
 

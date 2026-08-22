@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lumbra_app/design/tokens.dart';
 import 'package:lumbra_app/features/shell/barra_lateral.dart';
 
 /// A barra lateral mostra seções que AINDA NÃO EXISTEM (Agenda, Tarefas,
@@ -15,12 +16,16 @@ void main() {
     required Map<String, List<Secao>> grupos,
     required void Function(String) aoSelecionar,
     List<Secao> fixos = const [],
+    Map<String, int> selos = const {},
+    bool recolhida = false,
   }) {
     return MaterialApp(
       home: Scaffold(
         body: BarraLateral(
           grupos: grupos,
           fixos: fixos,
+          selos: selos,
+          recolhida: recolhida,
           selecionada: 'Conversas',
           aoSelecionar: aoSelecionar,
           rodape: const SizedBox.shrink(),
@@ -118,5 +123,93 @@ void main() {
 
     expect(find.text('CONTROLE'), findsOneWidget);
     expect(find.text('Conversas'), findsOneWidget);
+  });
+
+  group('recolhida', () {
+    // 220px de barra numa janela de 500 deixam 280 para o trabalho. O que
+    // a versão recolhida promete é que nada SOME — só o texto sai.
+
+    testWidgets('ocupa 60px e some com os rótulos', (tester) async {
+      await tester.pumpWidget(
+        montar(
+          grupos: {'Meu sistema': [disponivel, futura]},
+          aoSelecionar: (_) {},
+          recolhida: true,
+        ),
+      );
+
+      expect(
+        tester.getSize(find.byType(BarraLateral)).width,
+        Coluna.lateralRecolhida,
+      );
+      expect(find.text('Conversas'), findsNothing);
+      // nem o título do grupo: em 60px ele viraria três letras cortadas
+      expect(find.text('MEU SISTEMA'), findsNothing);
+    });
+
+    testWidgets('todo destino continua alcançável e nomeado', (tester) async {
+      final visitadas = <String>[];
+      await tester.pumpWidget(
+        montar(
+          grupos: {'Meu sistema': [disponivel]},
+          aoSelecionar: visitadas.add,
+          recolhida: true,
+        ),
+      );
+
+      // o tooltip É o rótulo quando não há rótulo: sem ele a barra vira
+      // oito ícones que só se aprende clicando
+      expect(find.byTooltip('Conversas'), findsOneWidget);
+      // pelo tooltip e não pelo ícone: 'Conversas' é a seção ATIVA aqui, e
+      // ativa ela desenha `iconeAtivo`. Procurar o ícone apagado passaria a
+      // testar qual dos dois está na tela, não se o destino abre.
+      await tester.tap(find.byTooltip('Conversas'));
+      expect(visitadas, ['Conversas']);
+    });
+
+    testWidgets('seção futura diz que é futura no tooltip', (tester) async {
+      // 'Agenda' e 'Agenda (P5)' são promessas diferentes, e recolhida o
+      // selo não tem onde aparecer
+      await tester.pumpWidget(
+        montar(
+          grupos: {'Meu sistema': [futura]},
+          aoSelecionar: (_) {},
+          recolhida: true,
+        ),
+      );
+      expect(find.byTooltip('Agenda (P5)'), findsOneWidget);
+    });
+
+    testWidgets('pedido pendente continua visível', (tester) async {
+      // o contador não cabe ao lado do ícone, mas sumir seria pior: pedido
+      // que ninguém vê equivale a pedido negado
+      const aprovacoes = Secao(
+        nome: 'Aprovações',
+        icone: Icons.verified_user_outlined,
+        iconeAtivo: Icons.verified_user,
+      );
+      await tester.pumpWidget(
+        montar(
+          grupos: {'Controle': [aprovacoes]},
+          aoSelecionar: (_) {},
+          selos: {'Aprovações': 3},
+          recolhida: true,
+        ),
+      );
+
+      // não é o número (não cabe), é o ponto — a forma que já significa
+      // "tem coisa aqui" em qualquer barra de tarefas
+      expect(find.text('3'), findsNothing);
+      final pontos = tester.widgetList<Container>(
+        find.descendant(
+          of: find.byType(BarraLateral),
+          matching: find.byType(Container),
+        ),
+      ).where((c) {
+        final d = c.decoration;
+        return d is BoxDecoration && d.shape == BoxShape.circle;
+      });
+      expect(pontos, isNotEmpty);
+    });
   });
 }

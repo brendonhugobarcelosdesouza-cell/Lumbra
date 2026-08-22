@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumbra_api/api.dart';
 import 'package:lumbra_app/core/api.dart';
+import 'package:lumbra_app/core/node_status.dart';
+import 'package:lumbra_app/core/session.dart';
+import 'package:lumbra_app/design/tokens.dart';
 import 'package:lumbra_app/features/agents/agents_providers.dart';
 import 'package:lumbra_app/features/agents/agents_screen.dart';
 import 'package:lumbra_app/features/approvals/approvals_providers.dart';
@@ -16,8 +19,13 @@ import 'package:lumbra_app/features/memories/memories_providers.dart';
 import 'package:lumbra_app/features/memories/memories_screen.dart';
 import 'package:lumbra_app/features/playbooks/playbooks_providers.dart';
 import 'package:lumbra_app/features/playbooks/playbooks_screen.dart';
+import 'package:lumbra_app/features/shell/barra_lateral.dart';
+import 'package:lumbra_app/features/shell/home_shell.dart';
 import 'package:lumbra_app/features/visao_geral/saude_providers.dart';
 import 'package:lumbra_app/features/visao_geral/visao_geral_screen.dart';
+
+import 'node_status_test.dart';
+import 'session_test.dart';
 
 /// Toda seção, em toda largura em que alguém realmente usa a Lumbra.
 ///
@@ -40,6 +48,13 @@ import 'package:lumbra_app/features/visao_geral/visao_geral_screen.dart';
 /// caracteres que existe no computador de quem usa.
 
 const _larguras = <double>[360, 520, 800, 1043, 1400];
+
+/// As larguras da JANELA inteira, para a moldura.
+///
+/// Diferentes das de cima de propósito: a seção recebe a janela menos a
+/// barra lateral, e confundir as duas réguas já produziu um bug. 500 é o
+/// caso que a barra recolhida existe para resolver.
+const _janelas = <double>[500, 700, 900, 1263, 1600];
 
 const _tituloLongo =
     'Contrato de prestação de serviços continuados — aditivo 3 (revisão '
@@ -198,5 +213,46 @@ void main() {
         // diz onde é meia falha.
       });
     }
+  }
+
+  // A moldura inteira — barra + seção — é o que a pessoa realmente vê. As
+  // seções acima foram medidas sozinhas; aqui a barra também está no
+  // caminho, e é onde a largura vira disputa entre navegar e trabalhar.
+  for (final janela in _janelas) {
+    testWidgets('a moldura cabe numa janela de ${janela.toInt()}px', (
+      tester,
+    ) async {
+      tester.view.physicalSize = Size(janela, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            ..._dados(),
+            nodeStateProvider.overrideWith(() => NoFixo(NodeState.noAr)),
+            tokenStorageProvider.overrideWithValue(
+              FakeTokenStorage(
+                const Session(accessToken: 'abc', refreshToken: 'ref'),
+              ),
+            ),
+          ],
+          child: const MaterialApp(home: HomeShell()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final barra = tester.getSize(find.byType(BarraLateral)).width;
+      expect(
+        barra,
+        janela < Coluna.cabeABarraInteira
+            ? Coluna.lateralRecolhida
+            : Coluna.lateral,
+      );
+      // e a regra que vale em TODA largura: trabalhar tem mais espaço que
+      // navegar. Em 500px não há como dar os 480 de leitura confortável à
+      // seção — mas há como não gastar 220 deles com um menu.
+      expect(janela - barra, greaterThan(barra));
+    });
   }
 }
