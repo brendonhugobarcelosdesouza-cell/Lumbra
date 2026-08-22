@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lumbra_api/api.dart';
@@ -10,6 +11,9 @@ import 'package:lumbra_app/features/chat/chat_providers.dart';
 import 'package:lumbra_app/features/documents/documents_providers.dart';
 import 'package:lumbra_app/features/memories/memories_providers.dart';
 import 'package:lumbra_app/features/playbooks/playbooks_providers.dart';
+import 'package:lumbra_app/features/shell/barra_lateral.dart';
+import 'package:lumbra_app/features/shell/secao_atual.dart';
+import 'package:lumbra_app/features/visao_geral/saude_providers.dart';
 import 'package:lumbra_app/main.dart';
 
 import 'node_status_test.dart';
@@ -34,7 +38,7 @@ void main() {
     expect(find.text('Criar uma conta'), findsOneWidget);
   });
 
-  testWidgets('com sessão, a raiz mostra as conversas', (tester) async {
+  testWidgets('com sessão, a raiz abre na Visão geral', (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -58,8 +62,29 @@ void main() {
           memoriesProvider.overrideWith((ref) async => const <MemoryItemOut>[]),
           documentsProvider.overrideWith((ref) async => const <DocumentOut>[]),
           devicesListProvider.overrideWith((ref) async => const <DeviceResponse>[]),
+          // a Visão geral é a primeira tela: sem diagnóstico falso ela iria
+          // à rede no teste
+          saudeProvider.overrideWith((ref) async => null),
         ],
         child: const LumbraApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // a Lumbra abre dizendo o que tem e como está, sem exigir uma escolha
+    // antes: entrar direto numa conversa vazia era pedir que a pessoa
+    // soubesse o que perguntar antes de saber o que existe ali
+    expect(
+      find.text('Isto é o que a Lumbra guarda e como ela está agora.'),
+      findsOneWidget,
+    );
+    // as conversas continuam a um clique. Pela barra, e não pelo cartão:
+    // "Conversas" é o nome dos dois, e o teste precisa dizer qual dos
+    // caminhos está exercitando
+    await tester.tap(
+      find.descendant(
+        of: find.byType(BarraLateral),
+        matching: find.text('Conversas'),
       ),
     );
     await tester.pumpAndSettle();
@@ -70,5 +95,11 @@ void main() {
     // a janela do teste tem 800px: abaixo de Largura.media, so a lista
     // aparece. O painel do meio e coberto em conversas_layout_test.dart,
     // onde a largura e explicita.
+
+    // `Secoes.ordem` e os filhos do IndexedStack são duas listas que
+    // precisam concordar; quem acrescentar uma seção só de um lado passa a
+    // abrir a tela errada, em silêncio
+    final pilha = tester.widget<IndexedStack>(find.byType(IndexedStack));
+    expect(pilha.children.length, Secoes.ordem.length);
   });
 }

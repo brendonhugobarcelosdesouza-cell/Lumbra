@@ -11,7 +11,9 @@ import '../devices/devices_screen.dart';
 import '../documents/documents_screen.dart';
 import '../memories/memories_screen.dart';
 import '../playbooks/playbooks_screen.dart';
+import '../visao_geral/visao_geral_screen.dart';
 import 'barra_lateral.dart';
+import 'secao_atual.dart';
 
 /// A moldura do app no desktop.
 ///
@@ -35,26 +37,6 @@ class HomeShell extends ConsumerStatefulWidget {
 }
 
 class _HomeShellState extends ConsumerState<HomeShell> {
-  static const _conversas = 'Conversas';
-  static const _memoria = 'Memória';
-  static const _documentos = 'Documentos';
-  static const _procedimentos = 'Procedimentos';
-  static const _aprovacoes = 'Aprovações';
-  static const _agentes = 'Agentes';
-  static const _dispositivos = 'Dispositivos';
-
-  /// A ordem aqui casa com a do `IndexedStack` — as duas listas juntas
-  /// porque separá-las seria convidar a desalinhá-las.
-  static const _ordem = [
-    _conversas,
-    _memoria,
-    _documentos,
-    _procedimentos,
-    _aprovacoes,
-    _agentes,
-    _dispositivos,
-  ];
-
   /// Dois selos, duas distâncias. `em breve` é o que já está na fila do P2 e
   /// chega em dias; `P5` é um épico que nem começou. Um selo só para os dois
   /// casos daria a "Agenda" a mesma promessa de proximidade que
@@ -64,30 +46,29 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   static final _grupos = <String, List<Secao>>{
     '': [
       const Secao(
-        nome: 'Visão geral',
+        nome: Secoes.visaoGeral,
         icone: Icons.auto_awesome_outlined,
         iconeAtivo: Icons.auto_awesome,
-        selo: _emBreve,
       ),
     ],
     'Meu sistema': [
       const Secao(
-        nome: _conversas,
+        nome: Secoes.conversas,
         icone: Icons.forum_outlined,
         iconeAtivo: Icons.forum,
       ),
       const Secao(
-        nome: _memoria,
+        nome: Secoes.memoria,
         icone: Icons.psychology_outlined,
         iconeAtivo: Icons.psychology,
       ),
       const Secao(
-        nome: _documentos,
+        nome: Secoes.documentos,
         icone: Icons.folder_outlined,
         iconeAtivo: Icons.folder,
       ),
       const Secao(
-        nome: _procedimentos,
+        nome: Secoes.procedimentos,
         icone: Icons.menu_book_outlined,
         iconeAtivo: Icons.menu_book,
       ),
@@ -110,17 +91,17 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     ],
     'Controle': [
       const Secao(
-        nome: _aprovacoes,
+        nome: Secoes.aprovacoes,
         icone: Icons.verified_user_outlined,
         iconeAtivo: Icons.verified_user,
       ),
       const Secao(
-        nome: _agentes,
+        nome: Secoes.agentes,
         icone: Icons.smart_toy_outlined,
         iconeAtivo: Icons.smart_toy,
       ),
       const Secao(
-        nome: _dispositivos,
+        nome: Secoes.dispositivos,
         icone: Icons.devices_outlined,
         iconeAtivo: Icons.devices,
       ),
@@ -136,22 +117,22 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     ),
   ];
 
-  String _secao = _conversas;
-
   @override
   Widget build(BuildContext context) {
     final cores = Theme.of(context).colorScheme;
     final pendentes = ref.watch(pendingApprovalsProvider).valueOrNull?.length ?? 0;
+    final secao = ref.watch(secaoAtualProvider);
 
     return Scaffold(
       body: Row(
         children: [
           BarraLateral(
             grupos: _grupos,
-            selecionada: _secao,
-            selos: {_aprovacoes: pendentes},
+            selecionada: secao,
+            selos: {Secoes.aprovacoes: pendentes},
             fixos: _fixos,
-            aoSelecionar: (nome) => setState(() => _secao = nome),
+            aoSelecionar: (nome) =>
+                ref.read(secaoAtualProvider.notifier).state = nome,
             rodape: const _Rodape(),
           ),
           VerticalDivider(width: 1, color: cores.outlineVariant),
@@ -159,8 +140,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           // não pode perder a rolagem nem recarregar tudo de novo
           Expanded(
             child: IndexedStack(
-              index: _ordem.indexOf(_secao),
+              index: Secoes.ordem.indexOf(secao),
               children: const [
+                VisaoGeralScreen(),
                 ConversationsScreen(),
                 MemoriesScreen(),
                 DocumentsScreen(),
