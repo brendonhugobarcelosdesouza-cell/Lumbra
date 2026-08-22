@@ -701,3 +701,31 @@ A rota devolvia `dict[str, Any]`. No cliente Dart gerado isso vira `Map<String, 
 (−) `Secoes.ordem` e a lista de filhos do `IndexedStack` são duas listas que precisam concordar; quem acrescentar uma seção só de um lado passa a abrir a tela errada. Está preso por teste em `routing_test.dart`, não por disciplina.
 
 **O que este erro ensina.** O primeiro teste que escrevi para a Visão geral abria a janela em 1000 px e passava. O `routing_test`, que usa os 800 px padrão, encontrou um `RenderFlex` estourando 161 px — a saudação não cabia a partir de ~530 px, que é a largura de quem usa a Lumbra ao lado de outra janela. **Um teste que escolhe a largura onde tudo cabe não está testando layout**; é o mesmo formato do breakpoint que comparava a largura da janela com a largura da seção, e passou porque o teste montava a seção sozinha, onde os dois números coincidem.
+
+---
+
+## ADR-077 — Largura é uma propriedade que se testa, e a barra cede antes do trabalho ✅
+
+**Contexto.** A reformulação visual inteira foi escrita e verificada em janelas confortáveis. Dois erros seguidos mostraram o buraco: um `RenderFlex` estourando 161 px na Visão geral abaixo de ~530 px, encontrado por acaso pelo `routing_test` (que usa os 800 px padrão), e antes dele o breakpoint da seção Conversas comparando a largura da JANELA com a largura da SEÇÃO.
+
+Os dois têm a mesma forma. O teste de cada tela escolhia a largura em que ela cabia, e passava.
+
+**Decisão.**
+
+**Existe uma varredura de larguras** (`larguras_test.dart`): cada tela, em 360/520/800/1043/1400 px, mais a moldura inteira em 500/700/900/1263/1600. Os dados de teste têm texto longo de propósito — título curto cabe em qualquer lugar; quem estoura uma `Row` é o nome de arquivo de 90 caracteres que existe no computador de quem usa.
+
+Ela **não chama `takeException`**. Essa função devolve só o resumo do erro e descarta o diagnóstico do framework, que é a parte que nomeia o widget e o arquivo. Deixada pendente, a exceção derruba o teste imprimindo a cadeia de criação inteira. Uma falha que não diz onde é meia falha.
+
+**A barra lateral recolhe a 60 px abaixo de 700** (`lateral + minimaDaConversa`). Numa janela de 500, os 220 px da barra deixavam 280 para o trabalho — e o trabalho é o motivo de a janela existir. A invariante que vale em toda largura: **trabalhar tem mais espaço que navegar**.
+
+Recolhida, nada some — só o texto sai. O nome vira tooltip, com o selo junto ("Agenda" e "Agenda (P5)" são promessas diferentes); o contador de aprovações vira um ponto sobre o ícone, porque pedido que ninguém vê equivale a pedido negado; o rodapé vira a inicial com o semáforo do Nó em cima dela, mantendo as duas coisas que a barra promete — quem está usando e se a Lumbra está de pé.
+
+**Há duas réguas, e elas não são intercambiáveis.** A moldura mede a JANELA, porque ela é a janela. A seção Conversas mede o ESPAÇO DA SEÇÃO, porque o que ela tem é a janela menos a barra. A regra: a régua certa é a que o próprio widget consegue ler.
+
+**Consequências.** (+) largura deixa de depender de alguém lembrar de arrastar a janela; (+) o token `lateralRecolhida`, que existia desde o Design System e nunca fora usado, deixa de prometer um estado inexistente; (+) a varredura cobre também a rota de detalhe (estado do documento), porque largura não distingue seção de detalhe.
+
+(−) a varredura mede que o conteúdo CABE, não que ele fique BOM. Um cartão que sobrevive em 360 px empilhando tudo passa no teste e continua ruim de usar; isso só a tela mostra.
+
+(−) 50 casos rodam a cada `flutter test`. São rápidos (montam uma seção com um item), mas crescem com cada tela nova — e a tentação de não acrescentar a tela nova à lista é real.
+
+**O que este erro ensina.** O teste que encontrou o bug não era o da tela: era o de roteamento, que por acaso usava outra largura. **Suítes que escolhem as condições favoráveis concordam entre si.** A varredura existe para tirar a escolha da mão de quem escreve o teste — e a primeira coisa que ela provou foi que minha previsão ("provavelmente está em várias telas") estava errada: era uma só.
