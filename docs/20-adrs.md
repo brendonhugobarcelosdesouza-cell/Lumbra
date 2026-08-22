@@ -671,3 +671,33 @@ Remover a promessa falsa não bastava: quem lê "nada sai daqui" some e não vê
 (−) o prompt agora tem duas variantes, e toda regra nova precisa valer nas duas; há teste percorrendo `PrivacyMode` inteiro para garantir que as defesas contra alucinação não se percam numa delas.
 
 **O que este erro ensina.** Ele só ficou visível porque duas partes do sistema que sabiam a mesma coisa passaram a mostrá-la **lado a lado**. O selo lia `model_policy`; o prompt ignorava. Enquanto a informação vivia em telas diferentes, a contradição existia e ninguém a via. Colocar duas fontes da mesma verdade no campo de visão uma da outra é um instrumento de verificação barato — e foi a interface, não o teste, que pegou este.
+
+---
+
+## ADR-076 — O diagnóstico do Nó vira produto, e a rota que o carrega sai do mapa livre ✅
+
+**Contexto.** A Visão geral era um item da barra lateral com selo `em breve`. A maquete propunha preenchê-la com agenda, tarefas e "a Lumbra percebeu" — tudo do P5. Construir aquilo daria uma tela bonita e mentirosa, que é justamente o que a última consequência do ADR-074 proíbe: **cartão sem dado não entra na tela**.
+
+Ao procurar o que HAVIA de dado, apareceu uma coisa que existia desde a Leva 3 e que ninguém que usa a Lumbra jamais viu: o `lumbra doctor`. As mesmas verificações que o CLI imprime são servidas em `/api/v1/system/health` e desenhadas no Developer Console — uma página HTML servida pelo próprio Nó, feita para quem construiu. Quem instalou a Lumbra e viu o modelo local não responder não tinha onde olhar.
+
+A rota devolvia `dict[str, Any]`. No cliente Dart gerado isso vira `Map<String, Object>`: funciona, e é exatamente o tipo de coisa que funciona **até alguém renomear um campo** — o app compila, roda, e a tela fica vazia sem ninguém saber por quê.
+
+**Decisão.**
+
+**O diagnóstico deixa de ser instrumentação e passa a ser a primeira tela.** A Visão geral mostra o que a Lumbra guarda (contagens) e como ela está (as verificações). O app abre nela, e não em Conversas: é a única tela que responde "o que tem aqui e está tudo bem?" sem exigir que se escolha alguma coisa antes.
+
+**As verificações em ordem colapsam numa linha; só as que pedem atenção ganham cartão.** Uma lista de dez "OK" esconde o único "FALHA" no meio dela. E toda verificação com problema carrega o `fix` — é o que separa um diagnóstico de uma reclamação.
+
+**A rota entra no contrato tipada** (`HealthOut`, `CheckOut`, `ResumoOut`), como o P5 já fizera com `memory`, `attachments` e `cancel`. A alternativa era o app decodificar o mapa na mão, que é atalho arquitetural: a informação já existia na API, o que faltava era o contrato dizer qual é o formato dela.
+
+**As contagens vêm dos MESMOS providers que cada seção usa.** Nenhuma consulta nova, nenhum endpoint de resumo. Dois caminhos para o mesmo número é como um painel começa a mentir sem que ninguém perceba: o cartão diz 12 documentos, a seção lista 9, e as duas telas estão "certas".
+
+**Enquanto o número não chegou, o cartão mostra `—` e não `0`.** Zero é a afirmação "você não tem nada", forte demais para se chutar durante um carregamento.
+
+**Consequências.** (+) o `lumbra doctor` deixa de exigir terminal; (+) renomear um campo de `HealthOut` passa a quebrar a geração do cliente Dart em vez de esvaziar uma tela em silêncio; (+) o `fix` de cada verificação vira contrato, então o Core não pode mais reportar um problema sem dizer o que fazer.
+
+(−) o app passa a abrir numa tela que faz uma chamada extra ao Nó a cada abertura. É a rota mais barata que existe e não exige sessão, mas é uma chamada.
+
+(−) `Secoes.ordem` e a lista de filhos do `IndexedStack` são duas listas que precisam concordar; quem acrescentar uma seção só de um lado passa a abrir a tela errada. Está preso por teste em `routing_test.dart`, não por disciplina.
+
+**O que este erro ensina.** O primeiro teste que escrevi para a Visão geral abria a janela em 1000 px e passava. O `routing_test`, que usa os 800 px padrão, encontrou um `RenderFlex` estourando 161 px — a saudação não cabia a partir de ~530 px, que é a largura de quem usa a Lumbra ao lado de outra janela. **Um teste que escolhe a largura onde tudo cabe não está testando layout**; é o mesmo formato do breakpoint que comparava a largura da janela com a largura da seção, e passou porque o teste montava a seção sozinha, onde os dois números coincidem.
